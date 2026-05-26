@@ -2,6 +2,7 @@ using System.Windows;
 using Microsoft.Web.WebView2.Core;
 using System.Diagnostics;
 using System.Text.Json;
+using System.IO;
 
 namespace TideReader.Desktop;
 
@@ -30,7 +31,8 @@ public partial class MainWindow : Window
 
     public async Task NavigateAsync(BrowserTarget target)
     {
-        await Browser.EnsureCoreWebView2Async();
+        var environment = await CreateBrowserEnvironmentAsync();
+        await Browser.EnsureCoreWebView2Async(environment);
         ConfigureBrowser();
 
         _allowedOrigins.Clear();
@@ -49,6 +51,17 @@ public partial class MainWindow : Window
         }
 
         Browser.NavigateToString(target.Html ?? "<html><body></body></html>");
+    }
+
+    private static Task<CoreWebView2Environment> CreateBrowserEnvironmentAsync()
+    {
+        var userDataDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "TideReader",
+            "WebView2");
+
+        Directory.CreateDirectory(userDataDir);
+        return CoreWebView2Environment.CreateAsync(userDataFolder: userDataDir);
     }
 
     private void OnNewWindowRequested(object? sender, CoreWebView2NewWindowRequestedEventArgs e)

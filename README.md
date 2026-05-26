@@ -96,9 +96,16 @@ powershell -ExecutionPolicy Bypass -File .\scripts\test-backend-coverage.ps1
 - Backend coverage is enforced through `scripts/test-backend-coverage.ps1`.
 - The current backend threshold is `85%` line coverage and `73%` branch coverage for the backend assembly.
 
+## GitHub Actions
+
+- `Quality Gates`: runs on every push and pull request, enforces the frontend coverage gate, backend coverage gate, and a release build of `TideReader.slnx`.
+- `Release`: runs on `v*` tags or manual dispatch, reruns the quality gates, packages the desktop app, and publishes both a zip and an installer as release assets.
+
+Use the `quality-gates` job as the required status check for branch protection.
+
 ## Publish
 
-For an MVP Windows release, publish the desktop host and ship the publish folder as a zip:
+For a local Windows publish folder:
 
 ```bash
 powershell -ExecutionPolicy Bypass -File .\scripts\publish-desktop.ps1
@@ -112,6 +119,32 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish-desktop.ps1 -Runtime 
 ```
 
 The publish output contains the desktop executable, the in-process backend, and the bundled React frontend under `frontend-dist/`. Each run publishes to a versioned folder such as `artifacts/publish/win-x64-20260525-104500/`.
+
+## Release Packaging
+
+To create both a release zip and a Windows installer locally:
+
+1. Install Inno Setup 6.
+2. Run:
+
+```bash
+powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 0.1.0
+```
+
+Optional flags:
+
+```bash
+powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 0.1.0 -Runtime win-x64
+powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 0.1.0 -SelfContained
+powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 0.1.0 -InnoSetupCompilerPath "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+```
+
+This creates:
+
+- `artifacts/release/<runtime>-<version>/TideReader-<version>-<runtime>.zip`
+- `artifacts/release/<runtime>-<version>/TideReader-<version>-<runtime>-Setup.exe`
+
+The GitHub `Release` workflow produces the same two deliverables and attaches them to the GitHub Release.
 
 ## Local Ports
 

@@ -1,0 +1,144 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version without the leading v
+        required: true
+        type: string
+      runtime:
+        description: Publish runtime
+        required: false
+        default: win-x64
+        type: string
+      self_contained:
+        description: Build a self-contained desktop package
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: release
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Restore .NET dependencies
+        run: dotnet restore TideReader.slnx
+
+      - name: Frontend coverage gate
+        working-directory: frontend
+        run: npm run test:coverage
+
+      - name: Backend coverage gate
+        shell: pwsh
+        run: .\scripts\test-backend-coverage.ps1
+
+      - name: Release build
+        run: dotnet build TideReader.slnx -c Release --no-restore
+
+      - name: Resolve release metadata
+        id: release_meta
+        shell: pwsh
+        run: |
+          $runtime = "${{ github.event.inputs.runtime }}"
+          if ([string]::IsNullOrWhiteSpace($runtime)) {
+            $runtime = "win-x64"
+          }
+
+          if ("${{ github.event_name }}" -eq "push") {
+            $tag = "${{ github.ref_name }}"
+            $version = $tag.TrimStart('v')
+          }
+          else {
+            $version = "${{ github.event.inputs.version }}"
+            $tag = "v$version"
+          }
+
+          $selfContained = if ("${{ github.event.inputs.self_contained }}" -eq "true") { "true" } else { "false" }
+          $releaseDir = "artifacts/release/$runtime-$version"
+          $zipName = "TideReader-$version-$runtime.zip"
+          $installerName = "TideReader-$version-$runtime-Setup.exe"
+
+          "runtime=$runtime" >> $env:GITHUB_OUTPUT
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "self_contained=$selfContained" >> $env:GITHUB_OUTPUT
+          "release_dir=$releaseDir" >> $env:GITHUB_OUTPUT
+          "zip_name=$zipName" >> $env:GITHUB_OUTPUT
+          "installer_name=$installerName" >> $env:GITHUB_OUTPUT
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Package zip and installer
+        shell: pwsh
+        run: >
+          .\scripts\package-release.ps1
+          -Version "${{ steps.release_meta.outputs.version }}"
+          -Runtime "${{ steps.release_meta.outputs.runtime }}"
+          -Configuration Release
+          -SelfContained:${{ steps.release_meta.outputs.self_contained }}
+
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: tidereader-release-${{ steps.release_meta.outputs.version }}
+          path: ${{ steps.release_meta.outputs.release_dir }}
+          if-no-files-found: error
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $tag = "${{ steps.release_meta.outputs.tag }}"
+          $title = "TideReader ${{ steps.release_meta.outputs.version }}"
+          $notes = @"
+          Release artifacts:
+          - ${{ steps.release_meta.outputs.zip_name }}
+          - ${{ steps.release_meta.outputs.installer_name }}
+          "@
+
+          $files = @(
+            "${{ steps.release_meta.outputs.release_dir }}/${{ steps.release_meta.outputs.zip_name }}",
+            "${{ steps.release_meta.outputs.release_dir }}/${{ steps.release_meta.outputs.installer_name }}"
+          )
+
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload $tag $files --clobber
+          }
+          else {
+            gh release create $tag $files --title $title --notes $notes --target $env:GITHUB_SHA
+          }

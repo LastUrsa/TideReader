@@ -1,0 +1,73 @@
+name: Quality Gates
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: quality-gates-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality-gates:
+    name: quality-gates
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Restore .NET dependencies
+        run: dotnet restore TideReader.slnx
+
+      - name: Frontend coverage gate
+        working-directory: frontend
+        run: npm run test:coverage
+
+      - name: Backend coverage gate
+        shell: pwsh
+        run: .\scripts\test-backend-coverage.ps1
+
+      - name: Release build
+        run: dotnet build TideReader.slnx -c Release --no-restore
+
+      - name: Publish desktop artifact
+        shell: pwsh
+        run: .\scripts\publish-desktop.ps1 -Version ci
+
+      - name: Upload desktop publish artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tidereader-win-x64
+          path: artifacts/publish/win-x64-ci
+          if-no-files-found: error
+
+      - name: Upload backend coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/TideReader.Backend.Tests/artifacts/coverage/backend/coverage.cobertura.xml
+          if-no-files-found: error
+
+      - name: Upload frontend coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage
+          if-no-files-found: error

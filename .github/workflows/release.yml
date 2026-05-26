@@ -103,12 +103,20 @@ jobs:
 
       - name: Package zip and installer
         shell: pwsh
-        run: >
-          .\scripts\package-release.ps1
-          -Version "${{ steps.release_meta.outputs.version }}"
-          -Runtime "${{ steps.release_meta.outputs.runtime }}"
-          -Configuration Release
-          -SelfContained:${{ steps.release_meta.outputs.self_contained }}
+        run: |
+          if ("${{ steps.release_meta.outputs.self_contained }}" -eq "true") {
+            .\scripts\package-release.ps1 `
+              -Version "${{ steps.release_meta.outputs.version }}" `
+              -Runtime "${{ steps.release_meta.outputs.runtime }}" `
+              -Configuration Release `
+              -SelfContained
+          }
+          else {
+            .\scripts\package-release.ps1 `
+              -Version "${{ steps.release_meta.outputs.version }}" `
+              -Runtime "${{ steps.release_meta.outputs.runtime }}" `
+              -Configuration Release
+          }
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4

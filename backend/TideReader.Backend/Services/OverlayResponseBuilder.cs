@@ -9,7 +9,7 @@ internal sealed record OverlayResponse(int StatusCode, string ContentType, byte[
 
 internal static class OverlayResponseBuilder
 {
-    public static OverlayResponse Build(string path, IPlaybackSnapshotStore snapshotStore)
+    public static OverlayResponse Build(string path, IPlaybackSnapshotStore snapshotStore, IOverlaySettingsSnapshotStore overlaySettingsSnapshotStore)
     {
         if (path.Equals("/overlay", StringComparison.OrdinalIgnoreCase))
         {
@@ -19,6 +19,13 @@ internal static class OverlayResponseBuilder
         if (path.Equals("/nowplaying.json", StringComparison.OrdinalIgnoreCase))
         {
             var payload = snapshotStore.GetNowPlaying();
+            var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            return Text((int)HttpStatusCode.OK, "application/json", json);
+        }
+
+        if (path.Equals("/overlay-settings.json", StringComparison.OrdinalIgnoreCase))
+        {
+            var payload = overlaySettingsSnapshotStore.Get();
             var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions(JsonSerializerDefaults.Web));
             return Text((int)HttpStatusCode.OK, "application/json", json);
         }
@@ -89,10 +96,11 @@ internal static class OverlayResponseBuilder
         backdrop-filter: blur(18px);
       }
       img {
+        display: block;
         width: 68px;
         height: 68px;
         object-fit: cover;
-        border-radius: 14px;
+        border-radius: 0;
         background:
           linear-gradient(135deg, var(--art-gradient-start), var(--art-gradient-end)),
           linear-gradient(180deg, var(--art-sheen-top), var(--art-sheen-bottom));
@@ -144,7 +152,8 @@ internal static class OverlayResponseBuilder
         font-weight: 700;
         line-height: 1.08;
       }
-      .meta {
+      .artist,
+      .album {
         margin-top: 4px;
         font-size: 15px;
         color: var(--muted);
@@ -160,19 +169,114 @@ internal static class OverlayResponseBuilder
           <div class="status-pill not_running" id="status">not running</div>
         </div>
         <div class="title" id="title">Waiting for TIDAL</div>
-        <div class="meta" id="meta">Artist - Album</div>
+        <div class="artist" id="artist">Artist unavailable</div>
+        <div class="album" id="album">Album unavailable</div>
       </div>
     </div>
     <script>
+      const defaultSettings = {
+        songTextStyle: {
+          fontFamily: 'Segoe UI',
+          colorHex: '#EBEBEB',
+          fontSizePx: 24,
+          maxCharacters: 0,
+          bold: true,
+          italic: false,
+          underline: false
+        },
+        artistTextStyle: {
+          fontFamily: 'Segoe UI',
+          colorHex: '#929498',
+          fontSizePx: 15,
+          maxCharacters: 0,
+          bold: false,
+          italic: false,
+          underline: false
+        },
+        albumTextStyle: {
+          fontFamily: 'Segoe UI',
+          colorHex: '#929498',
+          fontSizePx: 15,
+          maxCharacters: 0,
+          bold: false,
+          italic: false,
+          underline: false
+        },
+        imageSizePx: 68,
+        backgroundColorHex: '#32334F',
+        imagePosition: 'Left',
+        textAlign: 'Left',
+        showAppName: true,
+        showPlaybackState: true
+      };
+
+      function applyTextStyle(element, style) {
+        element.style.fontFamily = style.fontFamily;
+        element.style.color = style.colorHex;
+        element.style.fontSize = style.fontSizePx + 'px';
+        element.style.fontWeight = style.bold ? '700' : '400';
+        element.style.fontStyle = style.italic ? 'italic' : 'normal';
+        element.style.textDecoration = style.underline ? 'underline' : 'none';
+      }
+
+      function truncateText(value, maxCharacters, fallback) {
+        const next = String(value || fallback);
+        const limit = Number(maxCharacters || 0);
+        if (!Number.isFinite(limit) || limit <= 0 || next.length <= limit) {
+          return next;
+        }
+
+        return next.slice(0, limit) + '...';
+      }
+
+      function applyOverlaySettings(settings) {
+        const next = settings || defaultSettings;
+        const frame = document.querySelector('.frame');
+        const copy = document.querySelector('.copy');
+        const topline = document.querySelector('.topline');
+        const brand = document.querySelector('.brand');
+        const statusEl = document.getElementById('status');
+        const cover = document.getElementById('cover');
+        frame.style.background = next.backgroundColorHex;
+        statusEl.style.background = next.backgroundColorHex;
+        cover.style.width = next.imageSizePx + 'px';
+        cover.style.height = next.imageSizePx + 'px';
+        cover.style.order = next.imagePosition === 'Right' ? '1' : '0';
+        copy.style.order = next.imagePosition === 'Right' ? '0' : '1';
+        copy.style.textAlign = String(next.textAlign || 'Left').toLowerCase();
+        topline.style.justifyContent = next.textAlign === 'Center'
+          ? 'center'
+          : next.textAlign === 'Right'
+            ? 'flex-end'
+            : 'flex-start';
+        brand.style.display = next.showAppName === false ? 'none' : '';
+        statusEl.style.display = next.showPlaybackState === false ? 'none' : '';
+        topline.style.display = next.showAppName === false && next.showPlaybackState === false ? 'none' : 'flex';
+        applyTextStyle(document.getElementById('title'), next.songTextStyle);
+        applyTextStyle(document.getElementById('artist'), next.artistTextStyle);
+        applyTextStyle(document.getElementById('album'), next.albumTextStyle);
+      }
+
       async function refresh() {
-        const response = await fetch('/nowplaying.json', { cache: 'no-store' });
-        const data = await response.json();
+        const [nowPlayingResponse, settingsResponse] = await Promise.all([
+          fetch('/nowplaying.json', { cache: 'no-store' }),
+          fetch('/overlay-settings.json', { cache: 'no-store' })
+        ]);
+
+        const data = await nowPlayingResponse.json();
+        const settings = settingsResponse.ok
+          ? await settingsResponse.json()
+          : defaultSettings;
+        const activeSettings = settings || defaultSettings;
+
+        applyOverlaySettings(activeSettings);
         const status = String(data.status || 'not_running');
         const statusEl = document.getElementById('status');
         statusEl.textContent = status.replaceAll('_', ' ');
         statusEl.className = 'status-pill ' + status;
-        document.getElementById('title').textContent = data.title || 'Waiting for TIDAL';
-        document.getElementById('meta').textContent = [data.artist, data.album].filter(Boolean).join(' - ') || 'Artist - Album';
+        document.getElementById('title').textContent = truncateText(data.title, activeSettings.songTextStyle?.maxCharacters, 'Waiting for TIDAL');
+        document.getElementById('artist').textContent = truncateText(data.artist, activeSettings.artistTextStyle?.maxCharacters, 'Artist unavailable');
+        document.getElementById('album').textContent = truncateText(data.album, activeSettings.albumTextStyle?.maxCharacters, 'Album unavailable');
         const cover = document.getElementById('cover');
         if (data.artworkPath) {
           cover.src = '/cover.jpg?ts=' + Date.now();

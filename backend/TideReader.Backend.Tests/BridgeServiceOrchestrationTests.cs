@@ -130,6 +130,7 @@ public sealed class BridgeServiceOrchestrationTests
                 new FakeManualDetector(),
                 metadataEnricher,
                 new FakeOverlayCoordinator(),
+                new OverlaySettingsSnapshotStore(),
                 new PlaybackSnapshotStore());
         }
 

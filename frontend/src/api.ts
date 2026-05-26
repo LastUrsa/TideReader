@@ -1,3 +1,25 @@
+export type OverlayTextStyle = {
+  fontFamily: string;
+  colorHex: string;
+  fontSizePx: number;
+  maxCharacters: number;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+};
+
+export type OverlaySettings = {
+  songTextStyle: OverlayTextStyle;
+  artistTextStyle: OverlayTextStyle;
+  albumTextStyle: OverlayTextStyle;
+  imageSizePx: number;
+  backgroundColorHex: string;
+  imagePosition: 'Left' | 'Right';
+  textAlign: 'Left' | 'Center' | 'Right';
+  showAppName: boolean;
+  showPlaybackState: boolean;
+};
+
 export type Settings = {
   outputFolder: string;
   overlayEnabled: boolean;
@@ -9,6 +31,7 @@ export type Settings = {
   launchAtStartup: boolean;
   metadataProviderMode: 'Off' | 'MusicBrainzOnly' | 'MusicBrainzWithFallbacks';
   themeMode: 'Dark' | 'Light';
+  overlaySettings: OverlaySettings;
 };
 
 export type DetectionResult = {
@@ -82,6 +105,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export function getState(): Promise<AppState> {
   return request<AppState>('/api/state');
+}
+
+export async function getSystemFonts(): Promise<string[]> {
+  const result = await request<{ fonts: string[] }>('/api/system-fonts');
+  return result.fonts ?? [];
 }
 
 export function saveSettings(settings: Settings): Promise<AppState> {

@@ -10,15 +10,18 @@ Windows desktop app for detecting the current TIDAL track and publishing OBS-fri
 - React + TypeScript frontend
 - Windows desktop target
 
-## Current MVP Scope
+## Current Scope
 
-- Poll current playback state about once per second
-- Detect TIDAL track data from the Windows media session API first
+- Detect TIDAL playback from the Windows media session API
 - Fall back to the TIDAL window title when enabled
-- Accept optional manual debug input
-- Show current state in the desktop UI
-- Write OBS output files only when values change
-- Serve an optional local overlay and local `nowplaying.json`
+- Accept optional manual debug input for troubleshooting
+- Show the current track state in the desktop app
+- Write OBS-friendly output files only when values change
+- Serve a local browser overlay, `nowplaying.json`, and cover art
+- Persist app settings, overlay settings, and theme mode
+- Support dark and light themes in the desktop UI
+- Support customizable overlay text styling, artwork sizing, layout, visibility, and truncation rules
+- Package Windows releases as both a zip and an installer
 
 ## Project Layout
 

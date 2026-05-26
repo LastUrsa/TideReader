@@ -1,0 +1,56 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+Desktop.ini
+.idea/
+.vscode/
+.vs/
+
+# Logs
+*.log
+logs/
+app-data/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+secrets/
+
+# Build / cache
+dist/
+coverage/
+.cache/
+.vite/
+tmp/
+temp/
+artifacts/
+frontend/dist/
+frontend/coverage/
+frontend/.vite/
+backend/**/artifacts/
+backend/**/bin/
+backend/**/obj/
+desktop/**/bin/
+desktop/**/obj/
+
+# Dependencies
+node_modules/
+frontend/node_modules/
+packages/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# .NET
+bin/
+obj/
+*.user
+*.suo
+
+# Test output
+TestResults/

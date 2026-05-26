@@ -1,0 +1,108 @@
+:root {
+  font-family: "Segoe UI", "IBM Plex Sans", sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: dark;
+  color: #ebebeb;
+  background: #26273d;
+  --html-background: #15171b;
+  --app-background: #26273d;
+  --surface-primary: #32334f;
+  --surface-alt: #3b3d5d;
+  --surface-raised: #2b2d45;
+  --surface-active: #445875;
+  --surface-active-pill: #3f5067;
+  --surface-inactive: #45475d;
+  --surface-inactive-pill: #787b80;
+  --surface-input: #232538;
+  --accent: #50657f;
+  --accent-hover: #627a96;
+  --text-primary: #ebebeb;
+  --text-muted: #929498;
+  --border-color: #929498;
+  --danger: #720201;
+  --danger-bg: #4a1014;
+  --success: #89c89d;
+  --warning: #d6b36a;
+  --shadow-color: rgba(0, 0, 0, 0.32);
+  --surface-shadow: rgba(0, 0, 0, 0.32);
+  --modal-backdrop: rgba(9, 12, 16, 0.78);
+  --dialog-backdrop: rgba(9, 12, 16, 0.62);
+  --gradient-glow-left: rgba(98, 122, 150, 0.26);
+  --gradient-glow-right: rgba(80, 101, 127, 0.22);
+  --gradient-start: #26273d;
+  --gradient-end: #32334f;
+  --panel-border: rgba(146, 148, 152, 0.22);
+  --soft-border: rgba(146, 148, 152, 0.18);
+  --field-border: rgba(146, 148, 152, 0.32);
+  --ghost-background: rgba(146, 148, 152, 0.12);
+  --art-gradient-start: rgba(98, 122, 150, 0.42);
+  --art-gradient-end: rgba(35, 37, 56, 0.92);
+  --art-sheen-top: rgba(235, 235, 235, 0.08);
+  --art-sheen-bottom: rgba(235, 235, 235, 0.02);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+  color: #1f2330;
+  background: #ebebeb;
+  --app-background: #ebebeb;
+  --surface-primary: #ffffff;
+  --surface-alt: #f4f5f7;
+  --surface-raised: #dde2e8;
+  --surface-active: #d7e0ea;
+  --surface-active-pill: #445875;
+  --surface-inactive: #e1e4e8;
+  --surface-inactive-pill: #5f646a;
+  --surface-input: #f8f9fb;
+  --accent: #50657f;
+  --accent-hover: #647f9d;
+  --text-primary: #1f2330;
+  --text-muted: #6f7378;
+  --border-color: #c1c5ca;
+  --danger: #720201;
+  --danger-bg: #f4d8d8;
+  --success: #2d7a49;
+  --warning: #9a6b17;
+  --shadow-color: rgba(50, 51, 79, 0.12);
+  --surface-shadow: rgba(50, 51, 79, 0.12);
+  --modal-backdrop: rgba(9, 12, 16, 0.78);
+  --dialog-backdrop: rgba(9, 12, 16, 0.62);
+  --gradient-glow-left: rgba(80, 101, 127, 0.14);
+  --gradient-glow-right: rgba(68, 88, 117, 0.1);
+  --gradient-start: #ebebeb;
+  --gradient-end: #f4f5f7;
+  --panel-border: rgba(193, 197, 202, 0.72);
+  --soft-border: rgba(193, 197, 202, 0.58);
+  --field-border: rgba(193, 197, 202, 0.92);
+  --ghost-background: rgba(221, 226, 232, 0.7);
+  --art-gradient-start: rgba(80, 101, 127, 0.26);
+  --art-gradient-end: rgba(221, 226, 232, 0.95);
+  --art-sheen-top: rgba(255, 255, 255, 0.48);
+  --art-sheen-bottom: rgba(255, 255, 255, 0.12);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100%;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, var(--gradient-glow-left), transparent 32%),
+    radial-gradient(circle at top right, var(--gradient-glow-right), transparent 28%),
+    linear-gradient(180deg, var(--gradient-start), var(--app-background) 45%, var(--gradient-end));
+  color: var(--text-primary);
+}

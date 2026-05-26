@@ -1,0 +1,135 @@
+export type Settings = {
+  outputFolder: string;
+  overlayEnabled: boolean;
+  overlayPort: number;
+  pollIntervalMs: number;
+  enableWindowTitleFallback: boolean;
+  enableDebugManualInput: boolean;
+  startMinimized: boolean;
+  launchAtStartup: boolean;
+  metadataProviderMode: 'Off' | 'MusicBrainzOnly' | 'MusicBrainzWithFallbacks';
+  themeMode: 'Dark' | 'Light';
+};
+
+export type DetectionResult = {
+  status: string;
+  title: string;
+  artist: string;
+  album: string;
+  durationMs: number;
+  artworkPath: string;
+  source: string;
+  method: string;
+  confidence: number;
+  detectedText: string;
+  metadataSource: string;
+};
+
+export type AppState = {
+  settings: Settings;
+  nowPlaying: DetectionResult;
+  artworkRevision: number;
+  outputFolder: string;
+  overlayUrl: string;
+  logPath: string;
+  lastError: string;
+  manualInput: string;
+  startupReady: boolean;
+  statusMessage: string;
+};
+
+const localApiTokenSessionKey = 'tidereader.local_api_token';
+const localApiTokenQueryKey = 'tr_token';
+const localApiTokenHeader = 'X-TideReader-Token';
+const configuredBaseUrl = import.meta.env.VITE_BACKEND_URL?.trim() ?? '';
+const defaultBaseUrl = import.meta.env.DEV ? 'http://127.0.0.1:17656' : '';
+const baseUrl = (configuredBaseUrl || defaultBaseUrl).replace(/\/$/, '');
+
+function readLocalApiToken(): string {
+  return window.sessionStorage.getItem(localApiTokenSessionKey)?.trim() ?? '';
+}
+
+export function syncLocalApiTokenFromLocation(locationHref: string = window.location.href): void {
+  const url = new URL(locationHref);
+  const token = url.searchParams.get(localApiTokenQueryKey)?.trim() ?? '';
+  if (!token) {
+    return;
+  }
+
+  window.sessionStorage.setItem(localApiTokenSessionKey, token);
+  url.searchParams.delete(localApiTokenQueryKey);
+  const nextLocation = `${url.pathname}${url.search}${url.hash}` || '/';
+  window.history.replaceState(window.history.state, '', nextLocation);
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = readLocalApiToken();
+  const response = await fetch(`${baseUrl}${path}`, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { [localApiTokenHeader]: token } : {}),
+      ...(init?.headers ?? {}),
+    },
+    ...init,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Request failed: ${response.status}`);
+  }
+
+  return response.json() as Promise<T>;
+}
+
+export function getState(): Promise<AppState> {
+  return request<AppState>('/api/state');
+}
+
+export function saveSettings(settings: Settings): Promise<AppState> {
+  return request<AppState>('/api/settings', {
+    method: 'POST',
+    body: JSON.stringify(settings),
+  });
+}
+
+export function setManualInput(input: string): Promise<AppState> {
+  return request<AppState>('/api/manual-input', {
+    method: 'POST',
+    body: JSON.stringify({ input }),
+  });
+}
+
+export function runDetectionNow(): Promise<AppState> {
+  return request<AppState>('/api/run-detection', {
+    method: 'POST',
+    body: '{}',
+  });
+}
+
+export async function chooseOutputFolder(): Promise<string> {
+  const result = await request<{ folder: string | null }>('/api/choose-output-folder', {
+    method: 'POST',
+    body: '{}',
+  });
+  return result.folder ?? '';
+}
+
+export async function openOutputFolder(): Promise<void> {
+  await request<{ ok: boolean }>('/api/open-output-folder', {
+    method: 'POST',
+    body: '{}',
+  });
+}
+
+export async function openLogsFolder(): Promise<void> {
+  await request<{ ok: boolean }>('/api/open-logs-folder', {
+    method: 'POST',
+    body: '{}',
+  });
+}
+
+export function getArtworkUrl(revision: number): string {
+  const suffix = revision > 0 ? `?v=${encodeURIComponent(String(revision))}` : '';
+  const token = readLocalApiToken();
+  const tokenPart = token ? `${suffix ? '&' : '?'}${localApiTokenQueryKey}=${encodeURIComponent(token)}` : '';
+  return `${baseUrl}/api/artwork${suffix}${tokenPart}`;
+}

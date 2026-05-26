@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { chooseOutputFolder, getArtworkUrl, getState, openLogsFolder, openOutputFolder, runDetectionNow, saveSettings, setManualInput, syncLocalApiTokenFromLocation, type Settings } from './api';
+import { chooseOutputFolder, getArtworkUrl, getState, getSystemFonts, openLogsFolder, openOutputFolder, runDetectionNow, saveSettings, setManualInput, syncLocalApiTokenFromLocation, type Settings } from './api';
 
 const fetchMock = vi.fn();
 
@@ -51,6 +51,41 @@ describe('api', () => {
       launchAtStartup: true,
       metadataProviderMode: 'MusicBrainzWithFallbacks',
       themeMode: 'Dark',
+      overlaySettings: {
+        songTextStyle: {
+          fontFamily: 'Segoe UI',
+          colorHex: '#EBEBEB',
+          fontSizePx: 24,
+          maxCharacters: 0,
+          bold: true,
+          italic: false,
+          underline: false,
+        },
+        artistTextStyle: {
+          fontFamily: 'Segoe UI',
+          colorHex: '#929498',
+          fontSizePx: 15,
+          maxCharacters: 0,
+          bold: false,
+          italic: false,
+          underline: false,
+        },
+        albumTextStyle: {
+          fontFamily: 'Segoe UI',
+          colorHex: '#929498',
+          fontSizePx: 15,
+          maxCharacters: 0,
+          bold: false,
+          italic: false,
+          underline: false,
+        },
+        imageSizePx: 68,
+        backgroundColorHex: '#32334F',
+        imagePosition: 'Left',
+        textAlign: 'Left',
+        showAppName: true,
+        showPlaybackState: true,
+      },
     };
 
     fetchMock.mockResolvedValue({
@@ -98,16 +133,25 @@ describe('api', () => {
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ ok: true }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ fonts: ['Segoe UI', 'Arial'] }),
       });
 
     const folder = await chooseOutputFolder();
     await openOutputFolder();
     await openLogsFolder();
+    const fonts = await getSystemFonts();
 
     expect(folder).toBe('C:\\Output');
+    expect(fonts).toEqual(['Segoe UI', 'Arial']);
     expect(fetchMock).toHaveBeenNthCalledWith(1, `${baseUrl}/api/choose-output-folder`, expect.objectContaining({ method: 'POST' }));
     expect(fetchMock).toHaveBeenNthCalledWith(2, `${baseUrl}/api/open-output-folder`, expect.objectContaining({ method: 'POST' }));
     expect(fetchMock).toHaveBeenNthCalledWith(3, `${baseUrl}/api/open-logs-folder`, expect.objectContaining({ method: 'POST' }));
+    expect(fetchMock).toHaveBeenNthCalledWith(4, `${baseUrl}/api/system-fonts`, expect.objectContaining({
+      headers: { 'Content-Type': 'application/json' },
+    }));
   });
 
   it('builds the artwork URL with revision cache busting', () => {

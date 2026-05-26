@@ -4,6 +4,7 @@ namespace TideReader.Backend.Services;
 public sealed class OverlayServer : IOverlayCoordinator, IDisposable
 {
     private readonly IPlaybackSnapshotStore _snapshotStore;
+    private readonly IOverlaySettingsSnapshotStore _overlaySettingsSnapshotStore;
     private readonly AppLogger _logger;
     private readonly Lock _lock = new();
 
@@ -13,9 +14,10 @@ public sealed class OverlayServer : IOverlayCoordinator, IDisposable
     private int _port;
     private bool _enabled;
 
-    public OverlayServer(IPlaybackSnapshotStore snapshotStore, AppLogger logger)
+    public OverlayServer(IPlaybackSnapshotStore snapshotStore, IOverlaySettingsSnapshotStore overlaySettingsSnapshotStore, AppLogger logger)
     {
         _snapshotStore = snapshotStore;
+        _overlaySettingsSnapshotStore = overlaySettingsSnapshotStore;
         _logger = logger;
     }
 
@@ -137,8 +139,11 @@ public sealed class OverlayServer : IOverlayCoordinator, IDisposable
     private async Task HandleRequestAsync(HttpListenerContext context, CancellationToken cancellationToken)
     {
         var path = context.Request.Url?.AbsolutePath ?? "/";
-        var response = OverlayResponseBuilder.Build(path, _snapshotStore);
+        var response = OverlayResponseBuilder.Build(path, _snapshotStore, _overlaySettingsSnapshotStore);
         context.Response.StatusCode = response.StatusCode;
+        context.Response.Headers["Cache-Control"] = "no-store, no-cache, must-revalidate";
+        context.Response.Headers["Pragma"] = "no-cache";
+        context.Response.Headers["Expires"] = "0";
         if (response.Body.Length == 0)
         {
             context.Response.Close();

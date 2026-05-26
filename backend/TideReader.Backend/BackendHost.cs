@@ -82,8 +82,11 @@ public static class BackendHost
         services.AddSingleton<IFolderLauncher, ExplorerFolderLauncher>();
         services.AddSingleton<FolderDialogService>();
         services.AddSingleton<IFolderDialogService>(sp => sp.GetRequiredService<FolderDialogService>());
+        services.AddSingleton<ISystemFontCatalog, WindowsSystemFontCatalog>();
         services.AddSingleton<PlaybackSnapshotStore>();
         services.AddSingleton<IPlaybackSnapshotStore>(sp => sp.GetRequiredService<PlaybackSnapshotStore>());
+        services.AddSingleton<OverlaySettingsSnapshotStore>();
+        services.AddSingleton<IOverlaySettingsSnapshotStore>(sp => sp.GetRequiredService<OverlaySettingsSnapshotStore>());
         services.AddSingleton<OverlayServer>();
         services.AddSingleton<IOverlayCoordinator>(sp => sp.GetRequiredService<OverlayServer>());
         services.AddHttpClient<MetadataEnricher>(client =>
@@ -191,6 +194,7 @@ public static class BackendHost
                 return Results.BadRequest(new { error = ex.Message });
             }
         });
+        app.MapGet("/api/system-fonts", (ISystemFontCatalog fonts) => Results.Ok(new { fonts = fonts.GetFontFamilies() }));
         app.MapGet("/api/health", () => Results.Ok(new { ok = true }));
 
         if (HasBundledFrontend(app.Environment.WebRootPath))

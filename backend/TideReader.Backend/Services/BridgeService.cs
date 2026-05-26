@@ -1,4 +1,5 @@
 using TideReader.Backend.Models;
+using System.Text.RegularExpressions;
 
 namespace TideReader.Backend.Services;
 
@@ -12,10 +13,12 @@ public sealed class BridgeService
     private readonly IManualDetector _manualDetector;
     private readonly IMetadataEnricher _metadataEnricher;
     private readonly IOverlayCoordinator _overlayServer;
+    private readonly IOverlaySettingsSnapshotStore _overlaySettingsSnapshotStore;
     private readonly IPlaybackSnapshotStore _snapshotStore;
     private readonly Lock _lock = new();
     private readonly HashSet<string> _pendingEnrichmentKeys = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _detectionTimesUtc = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Regex HexColorPattern = new("^#[0-9A-Fa-f]{6}$", RegexOptions.Compiled);
 
     private Settings _settings = new();
     private DetectionResult _state = new();
@@ -28,7 +31,7 @@ public sealed class BridgeService
 
     public event Action<Settings>? SettingsChanged;
 
-    public BridgeService(ISettingsStore settingsStore, AppLogger logger, IOutputWriter outputWriter, IPlaybackDetector mediaSessionDetector, IWindowTitleDetector windowTitleDetector, IManualDetector manualDetector, IMetadataEnricher metadataEnricher, IOverlayCoordinator overlayServer, IPlaybackSnapshotStore snapshotStore)
+    public BridgeService(ISettingsStore settingsStore, AppLogger logger, IOutputWriter outputWriter, IPlaybackDetector mediaSessionDetector, IWindowTitleDetector windowTitleDetector, IManualDetector manualDetector, IMetadataEnricher metadataEnricher, IOverlayCoordinator overlayServer, IOverlaySettingsSnapshotStore overlaySettingsSnapshotStore, IPlaybackSnapshotStore snapshotStore)
     {
         _settingsStore = settingsStore;
         _logger = logger;
@@ -38,6 +41,7 @@ public sealed class BridgeService
         _manualDetector = manualDetector;
         _metadataEnricher = metadataEnricher;
         _overlayServer = overlayServer;
+        _overlaySettingsSnapshotStore = overlaySettingsSnapshotStore;
         _snapshotStore = snapshotStore;
     }
 
@@ -45,6 +49,7 @@ public sealed class BridgeService
     {
         _settings = await _settingsStore.LoadAsync(cancellationToken);
         NormalizeSettings(_settings, fallbackInvalidOutputFolder: true);
+        _overlaySettingsSnapshotStore.Update(_settings.OverlaySettings);
         _metadataProviderMode = ParseMetadataProviderMode(_settings.MetadataProviderMode);
         await ConfigureOverlayAsync(cancellationToken);
         SettingsChanged?.Invoke(CloneSettings(_settings));
@@ -79,6 +84,7 @@ public sealed class BridgeService
         lock (_lock)
         {
             _settings = settings;
+            _overlaySettingsSnapshotStore.Update(settings.OverlaySettings);
             _metadataProviderMode = ParseMetadataProviderMode(settings.MetadataProviderMode);
         }
 
@@ -403,7 +409,8 @@ public sealed class BridgeService
         StartMinimized = settings.StartMinimized,
         LaunchAtStartup = settings.LaunchAtStartup,
         MetadataProviderMode = settings.MetadataProviderMode,
-        ThemeMode = settings.ThemeMode
+        ThemeMode = settings.ThemeMode,
+        OverlaySettings = CloneOverlaySettings(settings.OverlaySettings)
     };
 
     private DetectionResult GetCurrentStateSnapshot()
@@ -447,6 +454,8 @@ public sealed class BridgeService
         {
             settings.ThemeMode = nameof(ThemeMode.Dark);
         }
+
+        NormalizeOverlaySettings(settings);
     }
 
     private async Task ConfigureOverlayAsync(CancellationToken cancellationToken)
@@ -464,4 +473,107 @@ public sealed class BridgeService
         Enum.TryParse<MetadataProviderMode>(value, ignoreCase: true, out var parsed)
             ? parsed
             : MetadataProviderMode.MusicBrainzWithFallbacks;
+
+    private static OverlaySettings CloneOverlaySettings(OverlaySettings settings) => new()
+    {
+        SongTextStyle = CloneOverlayTextStyle(settings.SongTextStyle),
+        ArtistTextStyle = CloneOverlayTextStyle(settings.ArtistTextStyle),
+        AlbumTextStyle = CloneOverlayTextStyle(settings.AlbumTextStyle),
+        ImageSizePx = settings.ImageSizePx,
+        BackgroundColorHex = settings.BackgroundColorHex,
+        ImagePosition = settings.ImagePosition,
+        TextAlign = settings.TextAlign,
+        ShowAppName = settings.ShowAppName,
+        ShowPlaybackState = settings.ShowPlaybackState
+    };
+
+    private static OverlayTextStyle CloneOverlayTextStyle(OverlayTextStyle style) => new()
+    {
+        FontFamily = style.FontFamily,
+        ColorHex = style.ColorHex,
+        FontSizePx = style.FontSizePx,
+        MaxCharacters = style.MaxCharacters,
+        Bold = style.Bold,
+        Italic = style.Italic,
+        Underline = style.Underline
+    };
+
+    private static void NormalizeOverlaySettings(Settings settings)
+    {
+        settings.OverlaySettings ??= new OverlaySettings();
+        var defaults = new OverlaySettings();
+
+        NormalizeOverlayTextStyle(settings.OverlaySettings.SongTextStyle ??= new OverlayTextStyle(), defaults.SongTextStyle);
+        NormalizeOverlayTextStyle(settings.OverlaySettings.ArtistTextStyle ??= new OverlayTextStyle(), defaults.ArtistTextStyle);
+        NormalizeOverlayTextStyle(settings.OverlaySettings.AlbumTextStyle ??= new OverlayTextStyle(), defaults.AlbumTextStyle);
+
+        if (settings.OverlaySettings.ImageSizePx <= 0)
+        {
+            settings.OverlaySettings.ImageSizePx = defaults.ImageSizePx;
+        }
+
+        settings.OverlaySettings.BackgroundColorHex = NormalizeHexColor(
+            settings.OverlaySettings.BackgroundColorHex,
+            defaults.BackgroundColorHex);
+        settings.OverlaySettings.ImagePosition = NormalizeOverlayChoice(
+            settings.OverlaySettings.ImagePosition,
+            defaults.ImagePosition,
+            ["Left", "Right"]);
+        settings.OverlaySettings.TextAlign = NormalizeOverlayChoice(
+            settings.OverlaySettings.TextAlign,
+            defaults.TextAlign,
+            ["Left", "Center", "Right"]);
+    }
+
+    private static void NormalizeOverlayTextStyle(OverlayTextStyle style, OverlayTextStyle defaults)
+    {
+        if (string.IsNullOrWhiteSpace(style.FontFamily))
+        {
+            style.FontFamily = defaults.FontFamily;
+        }
+
+        if (style.FontSizePx <= 0)
+        {
+            style.FontSizePx = defaults.FontSizePx;
+        }
+
+        if (style.MaxCharacters < 0)
+        {
+            style.MaxCharacters = defaults.MaxCharacters;
+        }
+
+        style.ColorHex = NormalizeHexColor(style.ColorHex, defaults.ColorHex);
+    }
+
+    private static string NormalizeHexColor(string? value, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return fallback;
+        }
+
+        var trimmed = value.Trim();
+        return HexColorPattern.IsMatch(trimmed)
+            ? trimmed.ToUpperInvariant()
+            : fallback;
+    }
+
+    private static string NormalizeOverlayChoice(string? value, string fallback, IReadOnlyList<string> allowedValues)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return fallback;
+        }
+
+        var trimmed = value.Trim();
+        foreach (var allowedValue in allowedValues)
+        {
+            if (string.Equals(trimmed, allowedValue, StringComparison.OrdinalIgnoreCase))
+            {
+                return allowedValue;
+            }
+        }
+
+        return fallback;
+    }
 }

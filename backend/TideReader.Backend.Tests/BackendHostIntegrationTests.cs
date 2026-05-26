@@ -272,6 +272,22 @@ public sealed class BackendHostIntegrationTests
     }
 
     [Fact]
+    public async Task SystemFonts_ReturnsConfiguredFontFamilies()
+    {
+        await using var app = await StartTestAppAsync(services =>
+        {
+            services.RemoveAll<ISystemFontCatalog>();
+            services.AddSingleton<ISystemFontCatalog>(new HostFakeSystemFontCatalog());
+        });
+
+        var client = app.GetTestClient();
+        var payload = await client.GetFromJsonAsync<SystemFontsResponse>("/api/system-fonts");
+
+        Assert.NotNull(payload);
+        Assert.Equal(["Segoe UI", "Arial", "Tahoma"], payload!.Fonts);
+    }
+
+    [Fact]
     public async Task Root_ServesBundledFrontend_WhenIndexExists()
     {
         var webRoot = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
@@ -311,6 +327,7 @@ public sealed class BackendHostIntegrationTests
                 services.RemoveAll<IManualDetector>();
                 services.RemoveAll<IMetadataEnricher>();
                 services.RemoveAll<IOverlayCoordinator>();
+                services.RemoveAll<ISystemFontCatalog>();
                 services.RemoveAll<IPlaybackSnapshotStore>();
                 services.RemoveAll<SettingsStore>();
                 services.RemoveAll<OutputWriter>();
@@ -327,6 +344,7 @@ public sealed class BackendHostIntegrationTests
                 services.AddSingleton<IManualDetector>(new HostFakeManualDetector());
                 services.AddSingleton<IMetadataEnricher>(new HostFakeMetadataEnricher());
                 services.AddSingleton<IOverlayCoordinator>(new HostFakeOverlayCoordinator());
+                services.AddSingleton<ISystemFontCatalog>(new HostFakeSystemFontCatalog());
                 services.AddSingleton<IPlaybackSnapshotStore>(new PlaybackSnapshotStore());
                 services.AddSingleton<FolderDialogService>();
                 services.AddSingleton<IFolderDialogService>(new HostFakeFolderDialogService());
@@ -354,6 +372,7 @@ public sealed class BackendHostIntegrationTests
                 services.RemoveAll<IManualDetector>();
                 services.RemoveAll<IMetadataEnricher>();
                 services.RemoveAll<IOverlayCoordinator>();
+                services.RemoveAll<ISystemFontCatalog>();
                 services.RemoveAll<IPlaybackSnapshotStore>();
                 services.RemoveAll<SettingsStore>();
                 services.RemoveAll<OutputWriter>();
@@ -370,6 +389,7 @@ public sealed class BackendHostIntegrationTests
                 services.AddSingleton<IManualDetector>(new HostFakeManualDetector());
                 services.AddSingleton<IMetadataEnricher>(new HostFakeMetadataEnricher());
                 services.AddSingleton<IOverlayCoordinator>(new HostFakeOverlayCoordinator());
+                services.AddSingleton<ISystemFontCatalog>(new HostFakeSystemFontCatalog());
                 services.AddSingleton<IPlaybackSnapshotStore>(new PlaybackSnapshotStore());
                 services.AddSingleton<FolderDialogService>();
                 services.AddSingleton<IFolderDialogService>(new HostFakeFolderDialogService());
@@ -440,8 +460,18 @@ public sealed class BackendHostIntegrationTests
         }
     }
 
+    private sealed class HostFakeSystemFontCatalog : ISystemFontCatalog
+    {
+        public IReadOnlyList<string> GetFontFamilies() => ["Segoe UI", "Arial", "Tahoma"];
+    }
+
     private sealed class ChooseFolderResponse
     {
         public string Folder { get; set; } = "";
+    }
+
+    private sealed class SystemFontsResponse
+    {
+        public string[] Fonts { get; set; } = [];
     }
 }

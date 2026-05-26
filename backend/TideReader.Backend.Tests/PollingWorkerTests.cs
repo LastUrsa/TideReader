@@ -27,6 +27,7 @@ public sealed class PollingWorkerTests
                 new NullManualDetector(),
                 new PassiveMetadataEnricher(),
                 new PassiveOverlayCoordinator(),
+                new OverlaySettingsSnapshotStore(),
                 new PlaybackSnapshotStore());
 
             using var worker = new PollingWorker(bridge);

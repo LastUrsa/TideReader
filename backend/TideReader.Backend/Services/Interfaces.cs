@@ -56,6 +56,12 @@ public interface IOverlayCoordinator
     Task ConfigureAsync(bool enabled, int port, CancellationToken cancellationToken);
 }
 
+public interface IOverlaySettingsSnapshotStore
+{
+    void Update(OverlaySettings settings);
+    OverlaySettings Get();
+}
+
 public interface IPlaybackSnapshotStore
 {
     void Update(DetectionResult state);
@@ -77,6 +83,11 @@ public interface IFolderPicker
 public interface IFolderLauncher
 {
     void OpenFolder(string path);
+}
+
+public interface ISystemFontCatalog
+{
+    IReadOnlyList<string> GetFontFamilies();
 }
 
 public interface IStartupRegistration

@@ -28,6 +28,49 @@ public enum ThemeMode
     Light
 }
 
+public sealed class OverlayTextStyle
+{
+    public string FontFamily { get; set; } = "Segoe UI";
+    public string ColorHex { get; set; } = "#EBEBEB";
+    public int FontSizePx { get; set; } = 24;
+    public int MaxCharacters { get; set; }
+    public bool Bold { get; set; } = true;
+    public bool Italic { get; set; }
+    public bool Underline { get; set; }
+}
+
+public sealed class OverlaySettings
+{
+    public OverlayTextStyle SongTextStyle { get; set; } = new()
+    {
+        FontFamily = "Segoe UI",
+        ColorHex = "#EBEBEB",
+        FontSizePx = 24,
+        Bold = true
+    };
+
+    public OverlayTextStyle ArtistTextStyle { get; set; } = new()
+    {
+        FontFamily = "Segoe UI",
+        ColorHex = "#929498",
+        FontSizePx = 15
+    };
+
+    public OverlayTextStyle AlbumTextStyle { get; set; } = new()
+    {
+        FontFamily = "Segoe UI",
+        ColorHex = "#929498",
+        FontSizePx = 15
+    };
+
+    public int ImageSizePx { get; set; } = 68;
+    public string BackgroundColorHex { get; set; } = "#32334F";
+    public string ImagePosition { get; set; } = "Left";
+    public string TextAlign { get; set; } = "Left";
+    public bool ShowAppName { get; set; } = true;
+    public bool ShowPlaybackState { get; set; } = true;
+}
+
 public sealed class Settings
 {
     public string OutputFolder { get; set; } = Defaults.OutputFolder;
@@ -40,6 +83,7 @@ public sealed class Settings
     public bool LaunchAtStartup { get; set; }
     public string MetadataProviderMode { get; set; } = nameof(Models.MetadataProviderMode.MusicBrainzWithFallbacks);
     public string ThemeMode { get; set; } = nameof(Models.ThemeMode.Dark);
+    public OverlaySettings OverlaySettings { get; set; } = new();
 }
 
 public sealed class DetectionResult

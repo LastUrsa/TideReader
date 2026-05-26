@@ -18,6 +18,7 @@ public sealed class OverlayServerIntegrationTests
         {
             using var logger = new AppLogger(tempDir);
             var store = new PlaybackSnapshotStore();
+            var overlaySettingsStore = new OverlaySettingsSnapshotStore();
             store.Update(new DetectionResult
             {
                 Status = "playing",
@@ -30,7 +31,7 @@ public sealed class OverlayServerIntegrationTests
                 Confidence = 0.92
             });
 
-            using var server = new OverlayServer(store, logger);
+            using var server = new OverlayServer(store, overlaySettingsStore, logger);
             var port = GetAvailablePort();
             await server.ConfigureAsync(true, port, CancellationToken.None);
 
@@ -38,14 +39,20 @@ public sealed class OverlayServerIntegrationTests
 
             var overlayResponse = await client.GetAsync("overlay");
             var nowPlaying = await client.GetFromJsonAsync<NowPlayingFile>("nowplaying.json");
+            var overlaySettings = await client.GetFromJsonAsync<OverlaySettings>("overlay-settings.json");
             var artworkResponse = await client.GetAsync("cover.jpg");
             var missingResponse = await client.GetAsync("missing");
 
             Assert.Equal($"http://127.0.0.1:{port}/overlay", server.Url);
             Assert.Equal(HttpStatusCode.OK, overlayResponse.StatusCode);
+            Assert.NotNull(overlayResponse.Headers.CacheControl);
+            Assert.True(overlayResponse.Headers.CacheControl!.NoStore);
+            Assert.True(overlayResponse.Headers.CacheControl.NoCache);
             Assert.NotNull(nowPlaying);
+            Assert.NotNull(overlaySettings);
             Assert.Equal("Track", nowPlaying!.Title);
             Assert.Equal("Artist", nowPlaying.Artist);
+            Assert.Equal("#32334F", overlaySettings!.BackgroundColorHex);
             Assert.Equal(HttpStatusCode.OK, artworkResponse.StatusCode);
             Assert.Equal([1, 2, 3], await artworkResponse.Content.ReadAsByteArrayAsync());
             Assert.Equal(HttpStatusCode.NotFound, missingResponse.StatusCode);

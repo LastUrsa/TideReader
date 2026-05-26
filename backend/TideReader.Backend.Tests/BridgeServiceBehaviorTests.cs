@@ -67,7 +67,35 @@ public sealed class BridgeServiceBehaviorTests
             OverlayPort = 0,
             PollIntervalMs = 50,
             MetadataProviderMode = "bogus",
-            ThemeMode = "bogus"
+            ThemeMode = "bogus",
+            OverlaySettings = new OverlaySettings
+            {
+                SongTextStyle = new OverlayTextStyle
+                {
+                    FontFamily = "",
+                    ColorHex = "bad-color",
+                    FontSizePx = 0,
+                    MaxCharacters = -1
+                },
+                ArtistTextStyle = new OverlayTextStyle
+                {
+                    FontFamily = "",
+                    ColorHex = "#12345",
+                    FontSizePx = -1,
+                    MaxCharacters = -2
+                },
+                AlbumTextStyle = new OverlayTextStyle
+                {
+                    FontFamily = "",
+                    ColorHex = "123456",
+                    FontSizePx = -2,
+                    MaxCharacters = -3
+                },
+                ImageSizePx = 0,
+                BackgroundColorHex = "bad-color",
+                ImagePosition = "sideways",
+                TextAlign = "diagonal"
+            }
         }, CancellationToken.None);
 
         Assert.NotNull(changedSettings);
@@ -76,6 +104,18 @@ public sealed class BridgeServiceBehaviorTests
         Assert.Equal(1000, state.Settings.PollIntervalMs);
         Assert.Equal(nameof(MetadataProviderMode.MusicBrainzWithFallbacks), state.Settings.MetadataProviderMode);
         Assert.Equal(nameof(ThemeMode.Dark), state.Settings.ThemeMode);
+        Assert.Equal("Segoe UI", state.Settings.OverlaySettings.SongTextStyle.FontFamily);
+        Assert.Equal("#EBEBEB", state.Settings.OverlaySettings.SongTextStyle.ColorHex);
+        Assert.Equal(24, state.Settings.OverlaySettings.SongTextStyle.FontSizePx);
+        Assert.Equal(0, state.Settings.OverlaySettings.SongTextStyle.MaxCharacters);
+        Assert.Equal(0, state.Settings.OverlaySettings.ArtistTextStyle.MaxCharacters);
+        Assert.Equal(0, state.Settings.OverlaySettings.AlbumTextStyle.MaxCharacters);
+        Assert.Equal("#32334F", state.Settings.OverlaySettings.BackgroundColorHex);
+        Assert.Equal(68, state.Settings.OverlaySettings.ImageSizePx);
+        Assert.Equal("Left", state.Settings.OverlaySettings.ImagePosition);
+        Assert.Equal("Left", state.Settings.OverlaySettings.TextAlign);
+        Assert.True(state.Settings.OverlaySettings.ShowAppName);
+        Assert.True(state.Settings.OverlaySettings.ShowPlaybackState);
         Assert.Equal("overlay failed", state.LastError);
         Assert.Equal(state.Settings.OutputFolder, harness.Settings.OutputFolder);
     }
@@ -226,7 +266,8 @@ public sealed class BridgeServiceBehaviorTests
                 EnableWindowTitleFallback = false,
                 EnableDebugManualInput = false,
                 MetadataProviderMode = nameof(MetadataProviderMode.Off),
-                ThemeMode = nameof(ThemeMode.Dark)
+                ThemeMode = nameof(ThemeMode.Dark),
+                OverlaySettings = new OverlaySettings()
             };
 
             PlaybackDetector = new SequencePlaybackDetector();
@@ -245,6 +286,7 @@ public sealed class BridgeServiceBehaviorTests
                 ManualDetector,
                 MetadataEnricher,
                 OverlayCoordinator,
+                new OverlaySettingsSnapshotStore(),
                 new PlaybackSnapshotStore());
         }
 
@@ -279,6 +321,7 @@ public sealed class BridgeServiceBehaviorTests
             settings.LaunchAtStartup = updated.LaunchAtStartup;
             settings.MetadataProviderMode = updated.MetadataProviderMode;
             settings.ThemeMode = updated.ThemeMode;
+            settings.OverlaySettings = updated.OverlaySettings;
             return Task.CompletedTask;
         }
     }

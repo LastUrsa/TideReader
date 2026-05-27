@@ -162,6 +162,8 @@ This creates:
 
 The GitHub `Release` workflow produces the same two deliverables and attaches them to the GitHub Release.
 
+Every release must include a human-written Markdown file at `.github/release-notes/v<version>.md` before tagging or running the workflow manually. The workflow fails if that file is missing or empty, then prepends it to GitHub-generated release notes and appends the packaged artifact names.
+
 ## Local Ports
 
 - Backend API: `http://127.0.0.1:17656`

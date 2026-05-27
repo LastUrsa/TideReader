@@ -158,6 +158,10 @@ jobs:
             -f tag_name="$tag" `
             -f target_commitish="$env:GITHUB_SHA" `
             --jq .body
+          $normalizedGeneratedNotes = ($generatedNotes.Trim()) `
+            -replace '(?m)^### ', '#### ' `
+            -replace '(?m)^## ', '### ' `
+            -replace '(?m)^# ', '## '
 
           $content = New-Object System.Collections.Generic.List[string]
           $humanNotes = Get-Content $notesSource -Raw
@@ -165,8 +169,9 @@ jobs:
           $content.Add("")
           $content.Add("---")
           $content.Add("")
-
-          $content.Add($generatedNotes.Trim())
+          $content.Add("## GitHub summary")
+          $content.Add("")
+          $content.Add($normalizedGeneratedNotes)
           $content.Add("")
           $content.Add("## Release artifacts")
           $content.Add("- ${{ steps.release_meta.outputs.zip_name }}")

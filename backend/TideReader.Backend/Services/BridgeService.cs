@@ -15,10 +15,11 @@ public sealed class BridgeService
     private readonly IOverlayCoordinator _overlayServer;
     private readonly IOverlaySettingsSnapshotStore _overlaySettingsSnapshotStore;
     private readonly IPlaybackSnapshotStore _snapshotStore;
+    private readonly IAppUpdateChecker _appUpdateChecker;
     private readonly Lock _lock = new();
     private readonly HashSet<string> _pendingEnrichmentKeys = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, DateTime> _detectionTimesUtc = new(StringComparer.OrdinalIgnoreCase);
-    private static readonly Regex HexColorPattern = new("^#[0-9A-Fa-f]{6}$", RegexOptions.Compiled);
+    private static readonly Regex HexColorPattern = new("^#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$", RegexOptions.Compiled);
 
     private Settings _settings = new();
     private DetectionResult _state = new();
@@ -31,7 +32,7 @@ public sealed class BridgeService
 
     public event Action<Settings>? SettingsChanged;
 
-    public BridgeService(ISettingsStore settingsStore, AppLogger logger, IOutputWriter outputWriter, IPlaybackDetector mediaSessionDetector, IWindowTitleDetector windowTitleDetector, IManualDetector manualDetector, IMetadataEnricher metadataEnricher, IOverlayCoordinator overlayServer, IOverlaySettingsSnapshotStore overlaySettingsSnapshotStore, IPlaybackSnapshotStore snapshotStore)
+    public BridgeService(ISettingsStore settingsStore, AppLogger logger, IOutputWriter outputWriter, IPlaybackDetector mediaSessionDetector, IWindowTitleDetector windowTitleDetector, IManualDetector manualDetector, IMetadataEnricher metadataEnricher, IOverlayCoordinator overlayServer, IOverlaySettingsSnapshotStore overlaySettingsSnapshotStore, IPlaybackSnapshotStore snapshotStore, IAppUpdateChecker? appUpdateChecker = null)
     {
         _settingsStore = settingsStore;
         _logger = logger;
@@ -43,6 +44,7 @@ public sealed class BridgeService
         _overlayServer = overlayServer;
         _overlaySettingsSnapshotStore = overlaySettingsSnapshotStore;
         _snapshotStore = snapshotStore;
+        _appUpdateChecker = appUpdateChecker ?? new FallbackAppUpdateChecker();
     }
 
     public async Task InitializeAsync(CancellationToken cancellationToken)
@@ -64,6 +66,7 @@ public sealed class BridgeService
             {
                 Settings = CloneSettings(_settings),
                 NowPlaying = BridgeStatePolicy.CloneDetection(_state),
+                AppVersion = _appUpdateChecker.CurrentVersion,
                 ArtworkRevision = _artworkRevision,
                 OutputFolder = _settings.OutputFolder,
                 OverlayUrl = _overlayServer.Url,
@@ -481,6 +484,8 @@ public sealed class BridgeService
         AlbumTextStyle = CloneOverlayTextStyle(settings.AlbumTextStyle),
         ImageSizePx = settings.ImageSizePx,
         BackgroundColorHex = settings.BackgroundColorHex,
+        OverlayContainerStyle = CloneOverlayContainerStyle(settings.OverlayContainerStyle),
+        StatusPillStyle = CloneStatusPillStyle(settings.StatusPillStyle),
         ImagePosition = settings.ImagePosition,
         TextAlign = settings.TextAlign,
         ShowAppName = settings.ShowAppName,
@@ -498,6 +503,45 @@ public sealed class BridgeService
         Underline = style.Underline
     };
 
+    private static OverlayContainerStyle CloneOverlayContainerStyle(OverlayContainerStyle style) => new()
+    {
+        BackgroundMode = style.BackgroundMode,
+        BackgroundColorHex = style.BackgroundColorHex,
+        Gradient = CloneGradientSettings(style.Gradient),
+        Opacity = style.Opacity,
+        CornerRadiusPx = style.CornerRadiusPx,
+        PaddingPx = style.PaddingPx,
+        GapPx = style.GapPx,
+        BorderEnabled = style.BorderEnabled,
+        BorderColorHex = style.BorderColorHex,
+        BorderWidthPx = style.BorderWidthPx
+    };
+
+    private static GradientSettings CloneGradientSettings(GradientSettings settings) => new()
+    {
+        ColorCount = settings.ColorCount,
+        Preset = settings.Preset,
+        Color1Hex = settings.Color1Hex,
+        Color2Hex = settings.Color2Hex,
+        Color3Hex = settings.Color3Hex,
+        AngleDeg = settings.AngleDeg
+    };
+
+    private static StatusPillStyle CloneStatusPillStyle(StatusPillStyle style) => new()
+    {
+        BackgroundColorHex = style.BackgroundColorHex,
+        TextColorHex = style.TextColorHex,
+        Opacity = style.Opacity,
+        FontFamily = style.FontFamily,
+        FontSizePx = style.FontSizePx,
+        Bold = style.Bold,
+        Italic = style.Italic,
+        Underline = style.Underline,
+        CornerRadiusPx = style.CornerRadiusPx,
+        PaddingHorizontalPx = style.PaddingHorizontalPx,
+        PaddingVerticalPx = style.PaddingVerticalPx
+    };
+
     private static void NormalizeOverlaySettings(Settings settings)
     {
         settings.OverlaySettings ??= new OverlaySettings();
@@ -512,9 +556,9 @@ public sealed class BridgeService
             settings.OverlaySettings.ImageSizePx = defaults.ImageSizePx;
         }
 
-        settings.OverlaySettings.BackgroundColorHex = NormalizeHexColor(
-            settings.OverlaySettings.BackgroundColorHex,
-            defaults.BackgroundColorHex);
+        settings.OverlaySettings.BackgroundColorHex = NormalizeHexColor(settings.OverlaySettings.BackgroundColorHex, defaults.BackgroundColorHex);
+        NormalizeOverlayContainerStyle(settings.OverlaySettings, defaults);
+        NormalizeStatusPillStyle(settings.OverlaySettings.StatusPillStyle ??= new StatusPillStyle(), defaults.StatusPillStyle);
         settings.OverlaySettings.ImagePosition = NormalizeOverlayChoice(
             settings.OverlaySettings.ImagePosition,
             defaults.ImagePosition,
@@ -545,6 +589,74 @@ public sealed class BridgeService
         style.ColorHex = NormalizeHexColor(style.ColorHex, defaults.ColorHex);
     }
 
+    private static void NormalizeOverlayContainerStyle(OverlaySettings settings, OverlaySettings defaults)
+    {
+        var style = settings.OverlayContainerStyle ??= new OverlayContainerStyle();
+        var defaultStyle = defaults.OverlayContainerStyle;
+
+        if (string.IsNullOrWhiteSpace(style.BackgroundColorHex) && !string.IsNullOrWhiteSpace(settings.BackgroundColorHex))
+        {
+            style.BackgroundColorHex = settings.BackgroundColorHex;
+        }
+
+        style.BackgroundMode = NormalizeOverlayChoice(
+            style.BackgroundMode,
+            defaultStyle.BackgroundMode,
+            ["solid", "gradient"]);
+        style.BackgroundColorHex = NormalizeHexColor(style.BackgroundColorHex, defaultStyle.BackgroundColorHex);
+        NormalizeGradientSettings(style.Gradient ??= new GradientSettings(), defaultStyle.Gradient);
+        style.Opacity = NormalizeOpacity(style.Opacity, defaultStyle.Opacity);
+        style.CornerRadiusPx = NormalizeZeroOrPositiveInt(style.CornerRadiusPx, defaultStyle.CornerRadiusPx);
+        style.PaddingPx = NormalizeZeroOrPositiveInt(style.PaddingPx, defaultStyle.PaddingPx);
+        style.GapPx = NormalizeZeroOrPositiveInt(style.GapPx, defaultStyle.GapPx);
+        style.BorderColorHex = NormalizeHexColor(style.BorderColorHex, defaultStyle.BorderColorHex);
+        style.BorderWidthPx = NormalizeZeroOrPositiveInt(style.BorderWidthPx, defaultStyle.BorderWidthPx);
+
+        settings.BackgroundColorHex = style.BackgroundColorHex;
+    }
+
+    private static void NormalizeGradientSettings(GradientSettings settings, GradientSettings defaults)
+    {
+        settings.ColorCount = settings.ColorCount is 2 or 3
+            ? settings.ColorCount
+            : defaults.ColorCount;
+        settings.Preset = NormalizeOverlayChoice(
+            settings.Preset,
+            defaults.Preset,
+            [
+                "Linear Left to Right",
+                "Linear Top to Bottom",
+                "Diagonal",
+                "Reverse Diagonal",
+                "Soft Radial",
+                "Spotlight",
+                "Stream Neon",
+                "Subtle Glass"
+            ]);
+        settings.Color1Hex = NormalizeHexColor(settings.Color1Hex, defaults.Color1Hex);
+        settings.Color2Hex = NormalizeHexColor(settings.Color2Hex, defaults.Color2Hex);
+        settings.Color3Hex = NormalizeHexColor(settings.Color3Hex, defaults.Color3Hex);
+        settings.AngleDeg = settings.AngleDeg >= 0 && settings.AngleDeg <= 360
+            ? settings.AngleDeg
+            : defaults.AngleDeg;
+    }
+
+    private static void NormalizeStatusPillStyle(StatusPillStyle style, StatusPillStyle defaults)
+    {
+        if (string.IsNullOrWhiteSpace(style.FontFamily))
+        {
+            style.FontFamily = defaults.FontFamily;
+        }
+
+        style.BackgroundColorHex = NormalizeHexColor(style.BackgroundColorHex, defaults.BackgroundColorHex);
+        style.TextColorHex = NormalizeHexColor(style.TextColorHex, defaults.TextColorHex);
+        style.Opacity = NormalizeOpacity(style.Opacity, defaults.Opacity);
+        style.FontSizePx = NormalizePositiveInt(style.FontSizePx, defaults.FontSizePx);
+        style.CornerRadiusPx = NormalizeZeroOrPositiveInt(style.CornerRadiusPx, defaults.CornerRadiusPx);
+        style.PaddingHorizontalPx = NormalizeZeroOrPositiveInt(style.PaddingHorizontalPx, defaults.PaddingHorizontalPx);
+        style.PaddingVerticalPx = NormalizeZeroOrPositiveInt(style.PaddingVerticalPx, defaults.PaddingVerticalPx);
+    }
+
     private static string NormalizeHexColor(string? value, string fallback)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -557,6 +669,17 @@ public sealed class BridgeService
             ? trimmed.ToUpperInvariant()
             : fallback;
     }
+
+    private static int NormalizePositiveInt(int value, int fallback) =>
+        value > 0 ? value : fallback;
+
+    private static int NormalizeZeroOrPositiveInt(int value, int fallback) =>
+        value >= 0 ? value : fallback;
+
+    private static double NormalizeOpacity(double value, double fallback) =>
+        double.IsFinite(value) && value >= 0 && value <= 1
+            ? value
+            : fallback;
 
     private static string NormalizeOverlayChoice(string? value, string fallback, IReadOnlyList<string> allowedValues)
     {
@@ -575,5 +698,19 @@ public sealed class BridgeService
         }
 
         return fallback;
+    }
+
+    private sealed class FallbackAppUpdateChecker : IAppUpdateChecker
+    {
+        public string CurrentVersion => "0.2.0";
+        public string ReleaseUrl => "https://github.com/LastUrsa/TideReader/releases";
+
+        public Task<UpdateInfo> CheckForUpdatesAsync(CancellationToken cancellationToken) => Task.FromResult(new UpdateInfo
+        {
+            CurrentVersion = CurrentVersion,
+            LatestVersion = CurrentVersion,
+            ReleaseUrl = ReleaseUrl,
+            Message = "You're running the latest version."
+        });
     }
 }

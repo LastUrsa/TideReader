@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { chooseOutputFolder, getArtworkUrl, getState, getSystemFonts, openLogsFolder, openOutputFolder, runDetectionNow, saveSettings, setManualInput, syncLocalApiTokenFromLocation, type Settings } from './api';
+import { checkForUpdates, chooseOutputFolder, getArtworkUrl, getState, getSystemFonts, openLogsFolder, openOutputFolder, openReleasePage, runDetectionNow, saveSettings, setManualInput, syncLocalApiTokenFromLocation, type Settings } from './api';
 
 const fetchMock = vi.fn();
 
@@ -81,6 +81,38 @@ describe('api', () => {
         },
         imageSizePx: 68,
         backgroundColorHex: '#32334F',
+        overlayContainerStyle: {
+          backgroundMode: 'solid',
+          backgroundColorHex: '#32334F',
+          gradient: {
+            colorCount: 3,
+            preset: 'Diagonal',
+            color1Hex: '#1F1F2E',
+            color2Hex: '#6B46C1',
+            color3Hex: '#111827',
+            angleDeg: 135,
+          },
+          opacity: 0.86,
+          cornerRadiusPx: 18,
+          paddingPx: 14,
+          gapPx: 14,
+          borderEnabled: true,
+          borderColorHex: '#929498',
+          borderWidthPx: 1,
+        },
+        statusPillStyle: {
+          backgroundColorHex: '#45475D',
+          textColorHex: '#787B80',
+          opacity: 1,
+          fontFamily: 'Segoe UI',
+          fontSizePx: 11,
+          bold: false,
+          italic: false,
+          underline: false,
+          cornerRadiusPx: 999,
+          paddingHorizontalPx: 9,
+          paddingVerticalPx: 4,
+        },
         imagePosition: 'Left',
         textAlign: 'Left',
         showAppName: true,
@@ -137,21 +169,42 @@ describe('api', () => {
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ fonts: ['Segoe UI', 'Arial'] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          currentVersion: '0.2.0',
+          latestVersion: '0.2.1',
+          updateAvailable: true,
+          releaseUrl: 'https://github.com/LastUrsa/TideReader/releases',
+          message: 'Version 0.2.1 is available.',
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ok: true }),
       });
 
     const folder = await chooseOutputFolder();
     await openOutputFolder();
     await openLogsFolder();
     const fonts = await getSystemFonts();
+    const updateInfo = await checkForUpdates();
+    await openReleasePage();
 
     expect(folder).toBe('C:\\Output');
     expect(fonts).toEqual(['Segoe UI', 'Arial']);
+    expect(updateInfo.latestVersion).toBe('0.2.1');
     expect(fetchMock).toHaveBeenNthCalledWith(1, `${baseUrl}/api/choose-output-folder`, expect.objectContaining({ method: 'POST' }));
     expect(fetchMock).toHaveBeenNthCalledWith(2, `${baseUrl}/api/open-output-folder`, expect.objectContaining({ method: 'POST' }));
     expect(fetchMock).toHaveBeenNthCalledWith(3, `${baseUrl}/api/open-logs-folder`, expect.objectContaining({ method: 'POST' }));
     expect(fetchMock).toHaveBeenNthCalledWith(4, `${baseUrl}/api/system-fonts`, expect.objectContaining({
       headers: { 'Content-Type': 'application/json' },
     }));
+    expect(fetchMock).toHaveBeenNthCalledWith(5, `${baseUrl}/api/check-for-updates`, expect.objectContaining({
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    expect(fetchMock).toHaveBeenNthCalledWith(6, `${baseUrl}/api/open-releases-page`, expect.objectContaining({ method: 'POST' }));
   });
 
   it('builds the artwork URL with revision cache busting', () => {

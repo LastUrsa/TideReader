@@ -17,7 +17,6 @@ New-Item -ItemType Directory -Path $coverageDir -Force | Out-Null
 
 dotnet test $testProject `
     -c $Configuration `
-    --no-restore `
     '/p:CollectCoverage=true' `
     '/p:CoverletOutputFormat=cobertura' `
     "/p:CoverletOutput=$coverageOutput"

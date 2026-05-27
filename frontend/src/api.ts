@@ -8,12 +8,50 @@ export type OverlayTextStyle = {
   underline: boolean;
 };
 
+export type OverlayContainerStyle = {
+  backgroundMode: 'solid' | 'gradient';
+  backgroundColorHex: string;
+  gradient: GradientSettings;
+  opacity: number;
+  cornerRadiusPx: number;
+  paddingPx: number;
+  gapPx: number;
+  borderEnabled: boolean;
+  borderColorHex: string;
+  borderWidthPx: number;
+};
+
+export type GradientSettings = {
+  colorCount: 2 | 3;
+  preset: string;
+  color1Hex: string;
+  color2Hex: string;
+  color3Hex: string;
+  angleDeg: number;
+};
+
+export type StatusPillStyle = {
+  backgroundColorHex: string;
+  textColorHex: string;
+  opacity: number;
+  fontFamily: string;
+  fontSizePx: number;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  cornerRadiusPx: number;
+  paddingHorizontalPx: number;
+  paddingVerticalPx: number;
+};
+
 export type OverlaySettings = {
   songTextStyle: OverlayTextStyle;
   artistTextStyle: OverlayTextStyle;
   albumTextStyle: OverlayTextStyle;
   imageSizePx: number;
   backgroundColorHex: string;
+  overlayContainerStyle: OverlayContainerStyle;
+  statusPillStyle: StatusPillStyle;
   imagePosition: 'Left' | 'Right';
   textAlign: 'Left' | 'Center' | 'Right';
   showAppName: boolean;
@@ -51,6 +89,7 @@ export type DetectionResult = {
 export type AppState = {
   settings: Settings;
   nowPlaying: DetectionResult;
+  appVersion: string;
   artworkRevision: number;
   outputFolder: string;
   overlayUrl: string;
@@ -59,6 +98,14 @@ export type AppState = {
   manualInput: string;
   startupReady: boolean;
   statusMessage: string;
+};
+
+export type UpdateInfo = {
+  currentVersion: string;
+  latestVersion: string;
+  updateAvailable: boolean;
+  releaseUrl: string;
+  message: string;
 };
 
 const localApiTokenSessionKey = 'tidereader.local_api_token';
@@ -150,6 +197,17 @@ export async function openOutputFolder(): Promise<void> {
 
 export async function openLogsFolder(): Promise<void> {
   await request<{ ok: boolean }>('/api/open-logs-folder', {
+    method: 'POST',
+    body: '{}',
+  });
+}
+
+export function checkForUpdates(): Promise<UpdateInfo> {
+  return request<UpdateInfo>('/api/check-for-updates');
+}
+
+export async function openReleasePage(): Promise<void> {
+  await request<{ ok: boolean }>('/api/open-releases-page', {
     method: 'POST',
     body: '{}',
   });

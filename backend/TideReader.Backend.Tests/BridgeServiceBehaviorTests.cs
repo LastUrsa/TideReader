@@ -287,7 +287,8 @@ public sealed class BridgeServiceBehaviorTests
                 MetadataEnricher,
                 OverlayCoordinator,
                 new OverlaySettingsSnapshotStore(),
-                new PlaybackSnapshotStore());
+                new PlaybackSnapshotStore(),
+                new StubAppUpdateChecker());
         }
 
         public Settings Settings { get; }
@@ -403,5 +404,18 @@ public sealed class BridgeServiceBehaviorTests
 
         public Task<DetectionResult> EnrichArtworkAsync(DetectionResult input, MetadataProviderMode mode, CancellationToken cancellationToken) =>
             EnrichArtworkAsyncHandler?.Invoke(BridgeStatePolicy.CloneDetection(input), mode, cancellationToken) ?? Task.FromResult(input);
+    }
+
+    private sealed class StubAppUpdateChecker : IAppUpdateChecker
+    {
+        public string CurrentVersion => "0.2.0";
+        public string ReleaseUrl => "https://github.com/LastUrsa/TideReader/releases";
+        public Task<UpdateInfo> CheckForUpdatesAsync(CancellationToken cancellationToken) => Task.FromResult(new UpdateInfo
+        {
+            CurrentVersion = CurrentVersion,
+            LatestVersion = CurrentVersion,
+            ReleaseUrl = ReleaseUrl,
+            Message = "You're running the latest version."
+        });
     }
 }

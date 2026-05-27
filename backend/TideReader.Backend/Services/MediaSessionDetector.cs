@@ -43,6 +43,7 @@ public sealed class MediaSessionDetector(
         var browserSettings = settings.BrowserSettings ?? new BrowserSettings();
         var eligible = candidates
             .Where(candidate => IsAllowedByMode(candidate, browserSettings.ActiveSourceMode))
+            .Where(candidate => candidate.IsPlaying || candidate.IsPaused)
             .Where(candidate => !(browserSettings.IgnorePausedSessions && candidate.IsPaused))
             .Where(candidate => !(browserSettings.IgnoreStaleSessions && candidate.IsStale))
             .ToList();
@@ -129,6 +130,11 @@ public sealed class MediaSessionDetector(
             return "ignored: paused";
         }
 
+        if (!candidate.IsPlaying && !candidate.IsPaused)
+        {
+            return "ignored: inactive session";
+        }
+
         if (settings.IgnoreStaleSessions && candidate.IsStale)
         {
             return "ignored: stale session";
@@ -208,7 +214,7 @@ public sealed class TidalPlaybackProvider : IPlaybackProvider
         var browserSettings = settings.BrowserSettings ?? new BrowserSettings();
         var result = new DetectionResult
         {
-            Status = snapshot.IsPaused ? "paused" : "playing",
+            Status = snapshot.IsPlaying ? "playing" : snapshot.IsPaused ? "paused" : "not_running",
             Title = snapshot.Title,
             Artist = snapshot.Artist,
             Album = snapshot.Album,
@@ -247,7 +253,7 @@ public sealed class TidalPlaybackProvider : IPlaybackProvider
                 LastUpdatedUtc = snapshot.LastUpdatedUtc
             },
             Priority: ResolvePriority("tidal", browserSettings),
-            IsPlaying: !snapshot.IsPaused,
+            IsPlaying: snapshot.IsPlaying,
             IsPaused: snapshot.IsPaused,
             IsStale: IsStale(snapshot, browserSettings),
             LastUpdatedUtc: snapshot.LastUpdatedUtc);
@@ -320,7 +326,7 @@ public sealed class BrowserMediaProvider : IPlaybackProvider
         var sourceLabel = GetSourceLabel(normalized.Site);
         var result = new DetectionResult
         {
-            Status = snapshot.IsPaused ? "paused" : "playing",
+            Status = snapshot.IsPlaying ? "playing" : snapshot.IsPaused ? "paused" : "not_running",
             Title = normalized.Title,
             Artist = normalized.Artist,
             Album = normalized.Album,
@@ -363,7 +369,7 @@ public sealed class BrowserMediaProvider : IPlaybackProvider
                 LastUpdatedUtc = snapshot.LastUpdatedUtc
             },
             Priority: ResolvePriority(normalized.Site, settings),
-            IsPlaying: !snapshot.IsPaused,
+            IsPlaying: snapshot.IsPlaying,
             IsPaused: snapshot.IsPaused,
             IsStale: IsStale(snapshot, settings),
             LastUpdatedUtc: snapshot.LastUpdatedUtc);

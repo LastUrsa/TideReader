@@ -23,6 +23,7 @@ public sealed record MediaSessionSnapshot(
     string SourceAppId,
     string Browser,
     string Site,
+    bool IsPlaying,
     bool IsPaused,
     string Title,
     string Artist,

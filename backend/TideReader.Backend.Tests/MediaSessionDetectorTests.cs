@@ -24,6 +24,7 @@ public sealed class MediaSessionDetectorTests
                 SourceAppId: "TIDAL.exe",
                 Browser: "",
                 Site: "",
+                IsPlaying: true,
                 IsPaused: false,
                 Title: "Track",
                 Artist: "Artist",
@@ -56,6 +57,7 @@ public sealed class MediaSessionDetectorTests
                 SourceAppId: "chrome.exe youtube",
                 Browser: "chrome",
                 Site: "",
+                IsPlaying: true,
                 IsPaused: false,
                 Title: "Artist - Song Title (Official Video)",
                 Artist: "",
@@ -68,6 +70,7 @@ public sealed class MediaSessionDetectorTests
                 SourceAppId: "TIDAL.exe",
                 Browser: "",
                 Site: "",
+                IsPlaying: false,
                 IsPaused: true,
                 Title: "Paused Track",
                 Artist: "Paused Artist",
@@ -97,6 +100,7 @@ public sealed class MediaSessionDetectorTests
                 SourceAppId: "308046B0AF4A39CB",
                 Browser: "firefox",
                 Site: "",
+                IsPlaying: true,
                 IsPaused: false,
                 Title: "▶︎ Title Theme (from \"Megaman Battle Network\") | Lowlander",
                 Artist: "",
@@ -130,6 +134,7 @@ public sealed class MediaSessionDetectorTests
                 SourceAppId: "chrome.exe youtube",
                 Browser: "chrome",
                 Site: "",
+                IsPlaying: true,
                 IsPaused: false,
                 Title: "Artist - Browser Track",
                 Artist: "",
@@ -142,6 +147,7 @@ public sealed class MediaSessionDetectorTests
                 SourceAppId: "TIDAL.exe",
                 Browser: "",
                 Site: "",
+                IsPlaying: true,
                 IsPaused: false,
                 Title: "Tidal Track",
                 Artist: "Tidal Artist",
@@ -183,6 +189,7 @@ public sealed class MediaSessionDetectorTests
                 SourceAppId: "firefox youtube",
                 Browser: "firefox",
                 Site: "",
+                IsPlaying: true,
                 IsPaused: false,
                 Title: "Artist A - Track A",
                 Artist: "",
@@ -195,6 +202,7 @@ public sealed class MediaSessionDetectorTests
                 SourceAppId: "firefox bandcamp",
                 Browser: "firefox",
                 Site: "",
+                IsPlaying: true,
                 IsPaused: false,
                 Title: "Track Name, by Artist B",
                 Artist: "",
@@ -228,6 +236,7 @@ public sealed class MediaSessionDetectorTests
                 SourceAppId: "chrome.exe youtube",
                 Browser: "chrome",
                 Site: "",
+                IsPlaying: true,
                 IsPaused: false,
                 Title: "Artist - Browser Track",
                 Artist: "",
@@ -240,6 +249,7 @@ public sealed class MediaSessionDetectorTests
                 SourceAppId: "TIDAL.exe",
                 Browser: "",
                 Site: "",
+                IsPlaying: true,
                 IsPaused: false,
                 Title: "Tidal Track",
                 Artist: "Tidal Artist",
@@ -282,6 +292,7 @@ public sealed class MediaSessionDetectorTests
                 SourceAppId: "chrome.exe youtube",
                 Browser: "chrome",
                 Site: "",
+                IsPlaying: true,
                 IsPaused: false,
                 Title: "Browser Artist - Browser Track",
                 Artist: "",
@@ -294,6 +305,7 @@ public sealed class MediaSessionDetectorTests
                 SourceAppId: "TIDAL.exe",
                 Browser: "",
                 Site: "",
+                IsPlaying: true,
                 IsPaused: false,
                 Title: "Tidal Track",
                 Artist: "Tidal Artist",
@@ -308,6 +320,52 @@ public sealed class MediaSessionDetectorTests
         Assert.NotNull(result.Result);
         Assert.Equal("tidal", result.Result!.Provider);
         Assert.Equal("Tidal Track", result.Result.Title);
+    }
+
+    [Fact]
+    public async Task DetectAsync_IgnoresInactiveBrowserSession_AndSelectsActiveTidal()
+    {
+        var settings = new Settings
+        {
+            BrowserSettings = new BrowserSettings
+            {
+                PreferTidalOverBrowser = true
+            }
+        };
+        var detector = CreateDetector([
+            new MediaSessionSnapshot(
+                SessionId: "browser-inactive",
+                SourceAppId: "chrome.exe youtube",
+                Browser: "chrome",
+                Site: "",
+                IsPlaying: false,
+                IsPaused: false,
+                Title: "Artist - Old Browser Track",
+                Artist: "",
+                Album: "",
+                DurationMs: 0,
+                LastUpdatedUtc: DateTimeOffset.UtcNow,
+                ArtworkBytes: []),
+            new MediaSessionSnapshot(
+                SessionId: "tidal-active",
+                SourceAppId: "TIDAL.exe",
+                Browser: "",
+                Site: "",
+                IsPlaying: true,
+                IsPaused: false,
+                Title: "Tidal Track",
+                Artist: "Tidal Artist",
+                Album: "",
+                DurationMs: 0,
+                LastUpdatedUtc: DateTimeOffset.UtcNow.AddSeconds(-1),
+                ArtworkBytes: [])
+        ]);
+
+        var result = await detector.DetectAsync(new DetectionResult(), settings, CancellationToken.None);
+
+        Assert.NotNull(result.Result);
+        Assert.Equal("tidal", result.Result!.Provider);
+        Assert.Contains(result.BrowserDebug.Sessions, session => session.SessionId == "browser-inactive" && session.DecisionReason == "ignored: inactive session");
     }
 
     [Fact]
@@ -328,6 +386,7 @@ public sealed class MediaSessionDetectorTests
                 SourceAppId: "chrome.exe soundcloud",
                 Browser: "chrome",
                 Site: "",
+                IsPlaying: false,
                 IsPaused: true,
                 Title: "Artist - Paused Track",
                 Artist: "",
@@ -340,6 +399,7 @@ public sealed class MediaSessionDetectorTests
                 SourceAppId: "chrome.exe generic",
                 Browser: "chrome",
                 Site: "",
+                IsPlaying: true,
                 IsPaused: false,
                 Title: "Old Generic Track",
                 Artist: "",
@@ -352,6 +412,7 @@ public sealed class MediaSessionDetectorTests
                 SourceAppId: "TIDAL.exe",
                 Browser: "",
                 Site: "",
+                IsPlaying: true,
                 IsPaused: false,
                 Title: "Chosen Track",
                 Artist: "Chosen Artist",
@@ -364,6 +425,7 @@ public sealed class MediaSessionDetectorTests
                 SourceAppId: "chrome.exe youtube",
                 Browser: "chrome",
                 Site: "",
+                IsPlaying: true,
                 IsPaused: false,
                 Title: "Artist - Browser Track",
                 Artist: "",
@@ -397,6 +459,7 @@ public sealed class MediaSessionDetectorTests
                 SourceAppId: "chrome.exe youtube",
                 Browser: "chrome",
                 Site: "",
+                IsPlaying: true,
                 IsPaused: false,
                 Title: "Artist - Song Title (Official Video)",
                 Artist: "",
@@ -439,6 +502,7 @@ public sealed class MediaSessionDetectorTests
                 SourceAppId: "chrome.exe soundcloud",
                 Browser: "chrome",
                 Site: "",
+                IsPlaying: true,
                 IsPaused: false,
                 Title: "Artist - Ignored Track",
                 Artist: "",
@@ -451,6 +515,7 @@ public sealed class MediaSessionDetectorTests
                 SourceAppId: "firefox soundcloud",
                 Browser: "firefox",
                 Site: "",
+                IsPlaying: true,
                 IsPaused: false,
                 Title: "Artist - Stream Track",
                 Artist: "",
@@ -485,6 +550,7 @@ public sealed class MediaSessionDetectorTests
                 SourceAppId: "firefox music.youtube.com",
                 Browser: "firefox",
                 Site: "",
+                IsPlaying: true,
                 IsPaused: false,
                 Title: "Structured Song",
                 Artist: "Structured Artist",
@@ -520,6 +586,7 @@ public sealed class MediaSessionDetectorTests
                 SourceAppId: "firefox media session",
                 Browser: "firefox",
                 Site: "",
+                IsPlaying: true,
                 IsPaused: false,
                 Title: "Generic Video Title",
                 Artist: "",

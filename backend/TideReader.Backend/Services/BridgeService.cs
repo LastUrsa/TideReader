@@ -155,7 +155,7 @@ public sealed class BridgeService
                 _snapshotStore.Update(result);
                 _statusMessage = Describe(result);
                 _lastError = "";
-                if (result.Status == "playing")
+                if (ShouldRefreshLastPlayingDetected(result))
                 {
                     _lastPlayingDetectedUtc = DateTimeOffset.UtcNow;
                 }
@@ -316,6 +316,10 @@ public sealed class BridgeService
         held.SelectionReason = "selected: cooldown active after session loss";
         return held;
     }
+
+    private static bool ShouldRefreshLastPlayingDetected(DetectionResult result) =>
+        result.Status == "playing" &&
+        !string.Equals(result.SelectionReason, "selected: cooldown active after session loss", StringComparison.Ordinal);
 
     private DetectionResult ApplyCache(DetectionResult current)
     {

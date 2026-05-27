@@ -287,6 +287,38 @@ public sealed class BridgeServiceBehaviorTests
     }
 
     [Fact]
+    public async Task RunDetectionAsync_DoesNotRenewHeldTrackForever_AfterSessionLoss()
+    {
+        using var harness = new BridgeServiceHarness();
+        harness.Settings.BrowserSettings.SourceSwitchCooldownMs = 5;
+        harness.PlaybackDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Browser Artist",
+            Title = "Browser Track",
+            Source = "YouTube",
+            Provider = "browser",
+            Browser = "firefox",
+            Site = "youtube",
+            Method = "media_session",
+            Confidence = 0.75
+        });
+        harness.PlaybackDetector.Results.Enqueue(null);
+        harness.PlaybackDetector.Results.Enqueue(null);
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        await harness.Service.RunDetectionAsync(CancellationToken.None);
+
+        var heldState = await harness.Service.RunDetectionAsync(CancellationToken.None);
+        await Task.Delay(25);
+        var expiredState = await harness.Service.RunDetectionAsync(CancellationToken.None);
+
+        Assert.Equal("playing", heldState.NowPlaying.Status);
+        Assert.Equal("Browser Track", heldState.NowPlaying.Title);
+        Assert.Equal("not_running", expiredState.NowPlaying.Status);
+    }
+
+    [Fact]
     public async Task RunDetectionAsync_ReusesConfirmedCache_ForSameTrackWithMissingMetadata()
     {
         using var harness = new BridgeServiceHarness();

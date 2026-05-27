@@ -2,6 +2,16 @@
 
 Windows desktop app for detecting the current TIDAL track and publishing OBS-friendly now-playing outputs.
 
+## Screenshots
+
+### Main App
+
+<img src="docs/images/readme/main-app.png" alt="TideReader main app placeholder state" width="900" />
+
+### Overlay Text Styling
+
+<img src="docs/images/readme/settings-overlay.png" alt="TideReader overlay text styling settings" width="560" />
+
 ## Stack
 
 - C# / .NET 10

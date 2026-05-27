@@ -195,8 +195,9 @@
 }
 
 .status-pill.not_running {
-  background: var(--danger-bg);
-  color: var(--danger);
+  background: var(--surface-inactive);
+  border-color: var(--soft-border);
+  color: #ff7a7a;
 }
 
 .overlay-art {

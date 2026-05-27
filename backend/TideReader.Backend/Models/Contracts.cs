@@ -39,6 +39,45 @@ public sealed class OverlayTextStyle
     public bool Underline { get; set; }
 }
 
+public sealed class OverlayContainerStyle
+{
+    public string BackgroundMode { get; set; } = "solid";
+    public string BackgroundColorHex { get; set; } = "#32334F";
+    public GradientSettings Gradient { get; set; } = new();
+    public double Opacity { get; set; } = 0.86;
+    public int CornerRadiusPx { get; set; } = 18;
+    public int PaddingPx { get; set; } = 14;
+    public int GapPx { get; set; } = 14;
+    public bool BorderEnabled { get; set; } = true;
+    public string BorderColorHex { get; set; } = "#929498";
+    public int BorderWidthPx { get; set; } = 1;
+}
+
+public sealed class GradientSettings
+{
+    public int ColorCount { get; set; } = 3;
+    public string Preset { get; set; } = "Diagonal";
+    public string Color1Hex { get; set; } = "#1F1F2E";
+    public string Color2Hex { get; set; } = "#6B46C1";
+    public string Color3Hex { get; set; } = "#111827";
+    public int AngleDeg { get; set; } = 135;
+}
+
+public sealed class StatusPillStyle
+{
+    public string BackgroundColorHex { get; set; } = "#45475D";
+    public string TextColorHex { get; set; } = "#787B80";
+    public double Opacity { get; set; } = 1;
+    public string FontFamily { get; set; } = "Segoe UI";
+    public int FontSizePx { get; set; } = 11;
+    public bool Bold { get; set; }
+    public bool Italic { get; set; }
+    public bool Underline { get; set; }
+    public int CornerRadiusPx { get; set; } = 999;
+    public int PaddingHorizontalPx { get; set; } = 9;
+    public int PaddingVerticalPx { get; set; } = 4;
+}
+
 public sealed class OverlaySettings
 {
     public OverlayTextStyle SongTextStyle { get; set; } = new()
@@ -65,6 +104,8 @@ public sealed class OverlaySettings
 
     public int ImageSizePx { get; set; } = 68;
     public string BackgroundColorHex { get; set; } = "#32334F";
+    public OverlayContainerStyle OverlayContainerStyle { get; set; } = new();
+    public StatusPillStyle StatusPillStyle { get; set; } = new();
     public string ImagePosition { get; set; } = "Left";
     public string TextAlign { get; set; } = "Left";
     public bool ShowAppName { get; set; } = true;
@@ -109,6 +150,7 @@ public sealed class AppState
 {
     public Settings Settings { get; set; } = new();
     public DetectionResult NowPlaying { get; set; } = new();
+    public string AppVersion { get; set; } = "";
     public long ArtworkRevision { get; set; }
     public string OutputFolder { get; set; } = "";
     public string OverlayUrl { get; set; } = "";
@@ -117,6 +159,15 @@ public sealed class AppState
     public string ManualInput { get; set; } = "";
     public bool StartupReady { get; set; } = true;
     public string StatusMessage { get; set; } = "Loading...";
+}
+
+public sealed class UpdateInfo
+{
+    public string CurrentVersion { get; set; } = "";
+    public string LatestVersion { get; set; } = "";
+    public bool UpdateAvailable { get; set; }
+    public string ReleaseUrl { get; set; } = "";
+    public string Message { get; set; } = "";
 }
 
 public sealed class NowPlayingFile

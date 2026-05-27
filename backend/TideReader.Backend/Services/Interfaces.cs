@@ -94,3 +94,15 @@ public interface IStartupRegistration
 {
     void Sync(bool enabled);
 }
+
+public interface IAppUpdateChecker
+{
+    string CurrentVersion { get; }
+    string ReleaseUrl { get; }
+    Task<UpdateInfo> CheckForUpdatesAsync(CancellationToken cancellationToken);
+}
+
+public interface IExternalUrlLauncher
+{
+    void OpenUrl(string url);
+}

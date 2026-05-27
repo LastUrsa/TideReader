@@ -17,7 +17,13 @@ public sealed class OverlayResponseBuilderTests
         Assert.NotEmpty(response.Body);
         Assert.Contains("border-radius: 0;", html);
         Assert.Contains("truncateText", html);
-        Assert.Contains("activeSettings.songTextStyle?.maxCharacters", html);
+        Assert.Contains("overlayContainerStyle", html);
+        Assert.Contains("backgroundMode", html);
+        Assert.Contains("gradient", html);
+        Assert.Contains("colorCount", html);
+        Assert.Contains("statusPillStyle", html);
+        Assert.Contains("withAlpha", html);
+        Assert.Contains("backgroundFromSettings", html);
     }
 
     [Fact]
@@ -53,6 +59,39 @@ public sealed class OverlayResponseBuilderTests
             ArtistTextStyle = new OverlayTextStyle { MaxCharacters = 12 },
             AlbumTextStyle = new OverlayTextStyle { MaxCharacters = 8 },
             BackgroundColorHex = "#112233",
+            OverlayContainerStyle = new OverlayContainerStyle
+            {
+                BackgroundMode = "gradient",
+                BackgroundColorHex = "#112233",
+                Gradient = new GradientSettings
+                {
+                    ColorCount = 2,
+                    Preset = "Subtle Glass",
+                    Color1Hex = "#010101",
+                    Color2Hex = "#222222",
+                    Color3Hex = "#333333",
+                    AngleDeg = 210
+                },
+                Opacity = 0.8,
+                CornerRadiusPx = 22,
+                PaddingPx = 18,
+                GapPx = 10,
+                BorderEnabled = false,
+                BorderColorHex = "#556677",
+                BorderWidthPx = 0
+            },
+            StatusPillStyle = new StatusPillStyle
+            {
+                BackgroundColorHex = "#223344",
+                TextColorHex = "#F8EEDD",
+                Opacity = 0.9,
+                FontFamily = "Arial",
+                FontSizePx = 12,
+                Bold = true,
+                CornerRadiusPx = 14,
+                PaddingHorizontalPx = 11,
+                PaddingVerticalPx = 5
+            },
             ImageSizePx = 96,
             ImagePosition = "Right",
             TextAlign = "Center",
@@ -66,6 +105,17 @@ public sealed class OverlayResponseBuilderTests
         Assert.Equal(200, response.StatusCode);
         Assert.Equal("application/json", response.ContentType);
         Assert.Equal("#112233", payload!.BackgroundColorHex);
+        Assert.Equal("gradient", payload.OverlayContainerStyle.BackgroundMode);
+        Assert.Equal("#112233", payload.OverlayContainerStyle.BackgroundColorHex);
+        Assert.Equal("Subtle Glass", payload.OverlayContainerStyle.Gradient.Preset);
+        Assert.Equal(2, payload.OverlayContainerStyle.Gradient.ColorCount);
+        Assert.Equal("#010101", payload.OverlayContainerStyle.Gradient.Color1Hex);
+        Assert.Equal("#222222", payload.OverlayContainerStyle.Gradient.Color2Hex);
+        Assert.Equal("#333333", payload.OverlayContainerStyle.Gradient.Color3Hex);
+        Assert.Equal(210, payload.OverlayContainerStyle.Gradient.AngleDeg);
+        Assert.Equal(0.8, payload.OverlayContainerStyle.Opacity);
+        Assert.Equal("#223344", payload.StatusPillStyle.BackgroundColorHex);
+        Assert.Equal("#F8EEDD", payload.StatusPillStyle.TextColorHex);
         Assert.Equal(96, payload.ImageSizePx);
         Assert.Equal("Right", payload.ImagePosition);
         Assert.Equal("Center", payload.TextAlign);

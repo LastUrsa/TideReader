@@ -89,11 +89,13 @@ public static class BackendHost
         services.AddSingleton<IOverlaySettingsSnapshotStore>(sp => sp.GetRequiredService<OverlaySettingsSnapshotStore>());
         services.AddSingleton<OverlayServer>();
         services.AddSingleton<IOverlayCoordinator>(sp => sp.GetRequiredService<OverlayServer>());
+        services.AddSingleton<IExternalUrlLauncher, ExternalUrlLauncher>();
         services.AddHttpClient<MetadataEnricher>(client =>
         {
             client.DefaultRequestHeaders.UserAgent.ParseAdd("TideReader/0.1");
         });
         services.AddSingleton<IMetadataEnricher>(sp => sp.GetRequiredService<MetadataEnricher>());
+        services.AddHttpClient<IAppUpdateChecker, AppUpdateChecker>();
         services.AddSingleton<BridgeService>();
         services.AddHostedService<PollingWorker>();
         options.ConfigureTestServices?.Invoke(services);
@@ -195,6 +197,13 @@ public static class BackendHost
             }
         });
         app.MapGet("/api/system-fonts", (ISystemFontCatalog fonts) => Results.Ok(new { fonts = fonts.GetFontFamilies() }));
+        app.MapGet("/api/check-for-updates", async (IAppUpdateChecker checker, CancellationToken cancellationToken) =>
+            Results.Ok(await checker.CheckForUpdatesAsync(cancellationToken)));
+        app.MapPost("/api/open-releases-page", (IAppUpdateChecker checker, IExternalUrlLauncher urlLauncher) =>
+        {
+            urlLauncher.OpenUrl(checker.ReleaseUrl);
+            return Results.Ok(new { ok = true });
+        });
         app.MapGet("/api/health", () => Results.Ok(new { ok = true }));
 
         if (HasBundledFrontend(app.Environment.WebRootPath))

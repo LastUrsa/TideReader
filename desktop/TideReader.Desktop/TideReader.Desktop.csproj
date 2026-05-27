@@ -24,6 +24,7 @@
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationIcon>Assets\TideReaderIcon.ico</ApplicationIcon>
+    <Version>0.2.0</Version>
   </PropertyGroup>
 
   <ItemGroup>

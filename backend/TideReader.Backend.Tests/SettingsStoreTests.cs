@@ -20,6 +20,17 @@ public sealed class SettingsStoreTests
             Assert.Equal(1000, settings.PollIntervalMs);
             Assert.Equal("Dark", settings.ThemeMode);
             Assert.Equal("#32334F", settings.OverlaySettings.BackgroundColorHex);
+            Assert.Equal("solid", settings.OverlaySettings.OverlayContainerStyle.BackgroundMode);
+            Assert.Equal("#32334F", settings.OverlaySettings.OverlayContainerStyle.BackgroundColorHex);
+            Assert.Equal("Diagonal", settings.OverlaySettings.OverlayContainerStyle.Gradient.Preset);
+            Assert.Equal(3, settings.OverlaySettings.OverlayContainerStyle.Gradient.ColorCount);
+            Assert.Equal("#1F1F2E", settings.OverlaySettings.OverlayContainerStyle.Gradient.Color1Hex);
+            Assert.Equal("#6B46C1", settings.OverlaySettings.OverlayContainerStyle.Gradient.Color2Hex);
+            Assert.Equal("#111827", settings.OverlaySettings.OverlayContainerStyle.Gradient.Color3Hex);
+            Assert.Equal(135, settings.OverlaySettings.OverlayContainerStyle.Gradient.AngleDeg);
+            Assert.Equal(0.86, settings.OverlaySettings.OverlayContainerStyle.Opacity);
+            Assert.Equal("#45475D", settings.OverlaySettings.StatusPillStyle.BackgroundColorHex);
+            Assert.Equal("#787B80", settings.OverlaySettings.StatusPillStyle.TextColorHex);
             Assert.Equal(68, settings.OverlaySettings.ImageSizePx);
             Assert.Equal("Left", settings.OverlaySettings.ImagePosition);
             Assert.Equal("Left", settings.OverlaySettings.TextAlign);
@@ -84,6 +95,41 @@ public sealed class SettingsStoreTests
                     },
                     ImageSizePx = 92,
                     BackgroundColorHex = "#AABBCC",
+                    OverlayContainerStyle = new TideReader.Backend.Models.OverlayContainerStyle
+                    {
+                        BackgroundMode = "gradient",
+                        BackgroundColorHex = "#AABBCC",
+                        Gradient = new TideReader.Backend.Models.GradientSettings
+                        {
+                            ColorCount = 2,
+                            Preset = "Spotlight",
+                            Color1Hex = "#010203",
+                            Color2Hex = "#A1B2C3",
+                            Color3Hex = "#F1E2D3",
+                            AngleDeg = 270
+                        },
+                        Opacity = 0.75,
+                        CornerRadiusPx = 24,
+                        PaddingPx = 16,
+                        GapPx = 12,
+                        BorderEnabled = false,
+                        BorderColorHex = "#111111",
+                        BorderWidthPx = 0
+                    },
+                    StatusPillStyle = new TideReader.Backend.Models.StatusPillStyle
+                    {
+                        BackgroundColorHex = "#223344",
+                        TextColorHex = "#F0E0D0",
+                        Opacity = 0.9,
+                        FontFamily = "Arial",
+                        FontSizePx = 13,
+                        Bold = true,
+                        Italic = true,
+                        Underline = true,
+                        CornerRadiusPx = 20,
+                        PaddingHorizontalPx = 12,
+                        PaddingVerticalPx = 6
+                    },
                     ImagePosition = "Right",
                     TextAlign = "Center",
                     ShowAppName = false,
@@ -117,6 +163,20 @@ public sealed class SettingsStoreTests
             Assert.Equal(input.OverlaySettings.AlbumTextStyle.MaxCharacters, loaded.OverlaySettings.AlbumTextStyle.MaxCharacters);
             Assert.Equal(input.OverlaySettings.ImageSizePx, loaded.OverlaySettings.ImageSizePx);
             Assert.Equal(input.OverlaySettings.BackgroundColorHex, loaded.OverlaySettings.BackgroundColorHex);
+            Assert.Equal(input.OverlaySettings.OverlayContainerStyle.BackgroundMode, loaded.OverlaySettings.OverlayContainerStyle.BackgroundMode);
+            Assert.Equal(input.OverlaySettings.OverlayContainerStyle.BackgroundColorHex, loaded.OverlaySettings.OverlayContainerStyle.BackgroundColorHex);
+            Assert.Equal(input.OverlaySettings.OverlayContainerStyle.Gradient.Preset, loaded.OverlaySettings.OverlayContainerStyle.Gradient.Preset);
+            Assert.Equal(input.OverlaySettings.OverlayContainerStyle.Gradient.ColorCount, loaded.OverlaySettings.OverlayContainerStyle.Gradient.ColorCount);
+            Assert.Equal(input.OverlaySettings.OverlayContainerStyle.Gradient.Color1Hex, loaded.OverlaySettings.OverlayContainerStyle.Gradient.Color1Hex);
+            Assert.Equal(input.OverlaySettings.OverlayContainerStyle.Gradient.Color2Hex, loaded.OverlaySettings.OverlayContainerStyle.Gradient.Color2Hex);
+            Assert.Equal(input.OverlaySettings.OverlayContainerStyle.Gradient.Color3Hex, loaded.OverlaySettings.OverlayContainerStyle.Gradient.Color3Hex);
+            Assert.Equal(input.OverlaySettings.OverlayContainerStyle.Gradient.AngleDeg, loaded.OverlaySettings.OverlayContainerStyle.Gradient.AngleDeg);
+            Assert.Equal(input.OverlaySettings.OverlayContainerStyle.Opacity, loaded.OverlaySettings.OverlayContainerStyle.Opacity);
+            Assert.Equal(input.OverlaySettings.OverlayContainerStyle.BorderEnabled, loaded.OverlaySettings.OverlayContainerStyle.BorderEnabled);
+            Assert.Equal(input.OverlaySettings.StatusPillStyle.BackgroundColorHex, loaded.OverlaySettings.StatusPillStyle.BackgroundColorHex);
+            Assert.Equal(input.OverlaySettings.StatusPillStyle.TextColorHex, loaded.OverlaySettings.StatusPillStyle.TextColorHex);
+            Assert.Equal(input.OverlaySettings.StatusPillStyle.FontFamily, loaded.OverlaySettings.StatusPillStyle.FontFamily);
+            Assert.Equal(input.OverlaySettings.StatusPillStyle.Bold, loaded.OverlaySettings.StatusPillStyle.Bold);
             Assert.Equal(input.OverlaySettings.ImagePosition, loaded.OverlaySettings.ImagePosition);
             Assert.Equal(input.OverlaySettings.TextAlign, loaded.OverlaySettings.TextAlign);
             Assert.Equal(input.OverlaySettings.ShowAppName, loaded.OverlaySettings.ShowAppName);

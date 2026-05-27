@@ -128,6 +128,39 @@ public sealed class BackendHostIntegrationTests
         Assert.NotNull(state);
         Assert.True(state!.StartupReady);
         Assert.Equal(@"C:\Temp\TideReaderTests", state.OutputFolder);
+        Assert.Equal("0.2.0", state.AppVersion);
+    }
+
+    [Fact]
+    public async Task CheckForUpdates_ReturnsPayloadFromService()
+    {
+        await using var app = await StartTestAppAsync();
+        var client = app.GetTestClient();
+
+        var payload = await client.GetFromJsonAsync<UpdateInfo>("/api/check-for-updates");
+
+        Assert.NotNull(payload);
+        Assert.Equal("0.2.0", payload!.CurrentVersion);
+        Assert.Equal("0.1.1", payload.LatestVersion);
+        Assert.True(payload.UpdateAvailable);
+    }
+
+    [Fact]
+    public async Task OpenReleasesPage_UsesUrlLauncher()
+    {
+        var launcher = new HostFakeExternalUrlLauncher();
+
+        await using var app = await StartTestAppAsync(services =>
+        {
+            services.RemoveAll<IExternalUrlLauncher>();
+            services.AddSingleton<IExternalUrlLauncher>(launcher);
+        });
+
+        var client = app.GetTestClient();
+        var response = await client.PostAsJsonAsync("/api/open-releases-page", new { });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal("https://github.com/LastUrsa/TideReader/releases", launcher.OpenedUrl);
     }
 
     [Fact]
@@ -327,6 +360,8 @@ public sealed class BackendHostIntegrationTests
                 services.RemoveAll<IManualDetector>();
                 services.RemoveAll<IMetadataEnricher>();
                 services.RemoveAll<IOverlayCoordinator>();
+                services.RemoveAll<IAppUpdateChecker>();
+                services.RemoveAll<IExternalUrlLauncher>();
                 services.RemoveAll<ISystemFontCatalog>();
                 services.RemoveAll<IPlaybackSnapshotStore>();
                 services.RemoveAll<SettingsStore>();
@@ -344,6 +379,8 @@ public sealed class BackendHostIntegrationTests
                 services.AddSingleton<IManualDetector>(new HostFakeManualDetector());
                 services.AddSingleton<IMetadataEnricher>(new HostFakeMetadataEnricher());
                 services.AddSingleton<IOverlayCoordinator>(new HostFakeOverlayCoordinator());
+                services.AddSingleton<IAppUpdateChecker>(new HostFakeAppUpdateChecker());
+                services.AddSingleton<IExternalUrlLauncher>(new HostFakeExternalUrlLauncher());
                 services.AddSingleton<ISystemFontCatalog>(new HostFakeSystemFontCatalog());
                 services.AddSingleton<IPlaybackSnapshotStore>(new PlaybackSnapshotStore());
                 services.AddSingleton<FolderDialogService>();
@@ -372,6 +409,8 @@ public sealed class BackendHostIntegrationTests
                 services.RemoveAll<IManualDetector>();
                 services.RemoveAll<IMetadataEnricher>();
                 services.RemoveAll<IOverlayCoordinator>();
+                services.RemoveAll<IAppUpdateChecker>();
+                services.RemoveAll<IExternalUrlLauncher>();
                 services.RemoveAll<ISystemFontCatalog>();
                 services.RemoveAll<IPlaybackSnapshotStore>();
                 services.RemoveAll<SettingsStore>();
@@ -389,6 +428,8 @@ public sealed class BackendHostIntegrationTests
                 services.AddSingleton<IManualDetector>(new HostFakeManualDetector());
                 services.AddSingleton<IMetadataEnricher>(new HostFakeMetadataEnricher());
                 services.AddSingleton<IOverlayCoordinator>(new HostFakeOverlayCoordinator());
+                services.AddSingleton<IAppUpdateChecker>(new HostFakeAppUpdateChecker());
+                services.AddSingleton<IExternalUrlLauncher>(new HostFakeExternalUrlLauncher());
                 services.AddSingleton<ISystemFontCatalog>(new HostFakeSystemFontCatalog());
                 services.AddSingleton<IPlaybackSnapshotStore>(new PlaybackSnapshotStore());
                 services.AddSingleton<FolderDialogService>();
@@ -463,6 +504,31 @@ public sealed class BackendHostIntegrationTests
     private sealed class HostFakeSystemFontCatalog : ISystemFontCatalog
     {
         public IReadOnlyList<string> GetFontFamilies() => ["Segoe UI", "Arial", "Tahoma"];
+    }
+
+    private sealed class HostFakeAppUpdateChecker : IAppUpdateChecker
+    {
+        public string CurrentVersion => "0.2.0";
+        public string ReleaseUrl => "https://github.com/LastUrsa/TideReader/releases";
+
+        public Task<UpdateInfo> CheckForUpdatesAsync(CancellationToken cancellationToken) => Task.FromResult(new UpdateInfo
+        {
+            CurrentVersion = CurrentVersion,
+            LatestVersion = "0.1.1",
+            UpdateAvailable = true,
+            ReleaseUrl = ReleaseUrl,
+            Message = "Version 0.1.1 is available."
+        });
+    }
+
+    private sealed class HostFakeExternalUrlLauncher : IExternalUrlLauncher
+    {
+        public string OpenedUrl { get; private set; } = "";
+
+        public void OpenUrl(string url)
+        {
+            OpenedUrl = url;
+        }
     }
 
     private sealed class ChooseFolderResponse

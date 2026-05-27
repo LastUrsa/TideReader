@@ -20,7 +20,8 @@ Windows desktop app for detecting the current TIDAL track and publishing OBS-fri
 - Serve a local browser overlay, `nowplaying.json`, and cover art
 - Persist app settings, overlay settings, and theme mode
 - Support dark and light themes in the desktop UI
-- Support customizable overlay text styling, artwork sizing, layout, visibility, and truncation rules
+- Support customizable overlay text styling, artwork sizing, layout, visibility, truncation, container styling, status pill styling, and gradient backgrounds
+- Show a live overlay preview inside settings and a built-in app update check
 - Package Windows releases as both a zip and an installer
 
 ## Project Layout
@@ -117,7 +118,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish-desktop.ps1
 Optional flags:
 
 ```bash
-powershell -ExecutionPolicy Bypass -File .\scripts\publish-desktop.ps1 -Version 0.1.0
+powershell -ExecutionPolicy Bypass -File .\scripts\publish-desktop.ps1 -Version 0.2.0
 powershell -ExecutionPolicy Bypass -File .\scripts\publish-desktop.ps1 -Runtime win-x64 -SelfContained
 ```
 
@@ -131,15 +132,15 @@ To create both a release zip and a Windows installer locally:
 2. Run:
 
 ```bash
-powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 0.1.0
+powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 0.2.0
 ```
 
 Optional flags:
 
 ```bash
-powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 0.1.0 -Runtime win-x64
-powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 0.1.0 -SelfContained
-powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 0.1.0 -InnoSetupCompilerPath "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 0.2.0 -Runtime win-x64
+powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 0.2.0 -SelfContained
+powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 0.2.0 -InnoSetupCompilerPath "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
 ```
 
 This creates:
@@ -194,9 +195,25 @@ When enabled, the local server exposes:
 
 - `/overlay`
 - `/nowplaying.json`
+- `/overlay-settings.json`
 - `/cover.jpg`
 
 Default port: `17655`
+
+Overlay settings include:
+
+- Song, artist, and album font family, color, size, weight, style, underline, and character limit controls
+- Artwork size and left/right artwork positioning
+- Container background mode, solid color, opacity, padding, gap, corner radius, and border controls
+- Gradient backgrounds with preset selection, 2-color or 3-color modes, and angle control where applicable
+- Independent status pill color, opacity, typography, padding, and corner radius controls
+- A live preview in the Settings modal that reuses the same overlay rendering path as the OBS browser overlay
+
+The main app display remains fixed; these styling controls affect the OBS overlay and settings preview only.
+
+## App Updates
+
+The General settings tab shows the current app version and includes a built-in `Check for Updates` action that links to the GitHub Releases page when a newer version is available.
 
 ## Troubleshooting Detection
 

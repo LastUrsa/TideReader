@@ -4,9 +4,11 @@ import App from './App';
 import type { AppState } from './api';
 
 const apiMocks = vi.hoisted(() => ({
+  checkForUpdates: vi.fn(),
   chooseOutputFolder: vi.fn(),
   getState: vi.fn(),
   getSystemFonts: vi.fn(),
+  openReleasePage: vi.fn(),
   openOutputFolder: vi.fn(),
   runDetectionNow: vi.fn(),
   saveSettings: vi.fn(),
@@ -17,9 +19,11 @@ vi.mock('./api', async () => {
   const actual = await vi.importActual<typeof import('./api')>('./api');
   return {
     ...actual,
+    checkForUpdates: apiMocks.checkForUpdates,
     chooseOutputFolder: apiMocks.chooseOutputFolder,
     getState: apiMocks.getState,
     getSystemFonts: apiMocks.getSystemFonts,
+    openReleasePage: apiMocks.openReleasePage,
     openOutputFolder: apiMocks.openOutputFolder,
     runDetectionNow: apiMocks.runDetectionNow,
     saveSettings: apiMocks.saveSettings,
@@ -70,6 +74,38 @@ function createState(overrides?: Partial<AppState>): AppState {
         },
         imageSizePx: 68,
         backgroundColorHex: '#32334F',
+        overlayContainerStyle: {
+          backgroundMode: 'solid',
+          backgroundColorHex: '#32334F',
+          gradient: {
+            colorCount: 3,
+            preset: 'Diagonal',
+            color1Hex: '#1F1F2E',
+            color2Hex: '#6B46C1',
+            color3Hex: '#111827',
+            angleDeg: 135,
+          },
+          opacity: 0.86,
+          cornerRadiusPx: 18,
+          paddingPx: 14,
+          gapPx: 14,
+          borderEnabled: true,
+          borderColorHex: '#929498',
+          borderWidthPx: 1,
+        },
+        statusPillStyle: {
+          backgroundColorHex: '#45475D',
+          textColorHex: '#787B80',
+          opacity: 1,
+          fontFamily: 'Segoe UI',
+          fontSizePx: 11,
+          bold: false,
+          italic: false,
+          underline: false,
+          cornerRadiusPx: 999,
+          paddingHorizontalPx: 9,
+          paddingVerticalPx: 4,
+        },
         imagePosition: 'Left',
         textAlign: 'Left',
         showAppName: true,
@@ -90,6 +126,7 @@ function createState(overrides?: Partial<AppState>): AppState {
       metadataSource: 'MusicBrainz',
     },
     outputFolder: 'C:\\Output',
+    appVersion: '0.2.0',
     artworkRevision: 12,
     overlayUrl: 'http://127.0.0.1:17655/overlay',
     logPath: 'C:\\Logs\\bridge.log',
@@ -114,8 +151,10 @@ describe('App', () => {
     delete (window as Window & { chrome?: unknown }).chrome;
     document.documentElement.removeAttribute('data-theme');
     apiMocks.chooseOutputFolder.mockReset();
+    apiMocks.checkForUpdates.mockReset();
     apiMocks.getState.mockReset();
     apiMocks.getSystemFonts.mockReset();
+    apiMocks.openReleasePage.mockReset();
     apiMocks.openOutputFolder.mockReset();
     apiMocks.runDetectionNow.mockReset();
     apiMocks.saveSettings.mockReset();
@@ -125,6 +164,14 @@ describe('App', () => {
     apiMocks.getSystemFonts.mockResolvedValue(['Segoe UI', 'Arial', 'Tahoma']);
     apiMocks.runDetectionNow.mockResolvedValue(createState({ statusMessage: 'Refreshed' }));
     apiMocks.openOutputFolder.mockResolvedValue(undefined);
+    apiMocks.openReleasePage.mockResolvedValue(undefined);
+    apiMocks.checkForUpdates.mockResolvedValue({
+      currentVersion: '0.2.0',
+      latestVersion: '0.2.1',
+      updateAvailable: true,
+      releaseUrl: 'https://github.com/LastUrsa/TideReader/releases',
+      message: 'Version 0.2.1 is available.',
+    });
     apiMocks.saveSettings.mockResolvedValue(createState());
     apiMocks.chooseOutputFolder.mockResolvedValue('C:\\Chosen');
   });
@@ -208,6 +255,36 @@ describe('App', () => {
     await waitFor(() => expect(apiMocks.runDetectionNow).toHaveBeenCalledOnce());
   });
 
+  it('checks for updates from the General tab and opens releases when available', async () => {
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Sample Track' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+
+    expect(screen.getByText('Current version')).toBeInTheDocument();
+    expect(screen.getByText('0.2.0')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Check for Updates' }));
+
+    await screen.findByText('Version 0.2.1 is available.');
+    expect(screen.getByText('Latest version: 0.2.1')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'View Releases' }));
+    await waitFor(() => expect(apiMocks.openReleasePage).toHaveBeenCalledOnce());
+  });
+
+  it('shows an error when the update check fails', async () => {
+    apiMocks.checkForUpdates.mockRejectedValue(new Error('network down'));
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Sample Track' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Check for Updates' }));
+
+    expect(await screen.findByText('Update check failed: Error: network down')).toBeInTheDocument();
+  });
+
   it('saves edited settings through the backend', async () => {
     render(<App />);
 
@@ -268,7 +345,7 @@ describe('App', () => {
     fireEvent.change(screen.getAllByLabelText('Font family')[0], {
       target: { value: 'Arial' },
     });
-    fireEvent.change(screen.getAllByLabelText('Color hex')[0], {
+    fireEvent.change(screen.getAllByLabelText('Hex color')[0], {
       target: { value: '#112233' },
     });
     fireEvent.change(screen.getAllByLabelText('Font size (px)')[0], {
@@ -291,14 +368,27 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('Artwork image size (px)'), {
       target: { value: '92' },
     });
-    fireEvent.change(screen.getByLabelText('Overlay background color'), {
+    fireEvent.change(screen.getAllByLabelText('Background color')[0], {
       target: { value: '#445566' },
+    });
+    fireEvent.change(screen.getByLabelText('Background Opacity'), {
+      target: { value: '0.75' },
     });
     fireEvent.change(screen.getByLabelText('Artwork position'), {
       target: { value: 'Right' },
     });
     fireEvent.change(screen.getByLabelText('Text alignment'), {
       target: { value: 'Center' },
+    });
+    fireEvent.click(screen.getByLabelText('Border enabled'));
+    fireEvent.change(screen.getAllByLabelText('Background color')[1], {
+      target: { value: '#334455' },
+    });
+    fireEvent.change(screen.getByLabelText('Text color'), {
+      target: { value: '#FFEEDD' },
+    });
+    fireEvent.change(screen.getByLabelText('Status Pill Opacity'), {
+      target: { value: '0.9' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
 
@@ -321,6 +411,16 @@ describe('App', () => {
         }),
         imageSizePx: 92,
         backgroundColorHex: '#445566',
+        overlayContainerStyle: expect.objectContaining({
+          backgroundColorHex: '#445566',
+          opacity: 0.75,
+          borderEnabled: false,
+        }),
+        statusPillStyle: expect.objectContaining({
+          backgroundColorHex: '#334455',
+          textColorHex: '#FFEEDD',
+          opacity: 0.9,
+        }),
         imagePosition: 'Right',
         textAlign: 'Center',
         showAppName: false,
@@ -329,15 +429,51 @@ describe('App', () => {
     })));
   });
 
-  it('shows a live preview for overlay fonts', async () => {
+  it('shows a live preview for overlay styling', async () => {
     render(<App />);
 
     await screen.findByRole('heading', { name: 'Sample Track' });
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
     fireEvent.click(screen.getByRole('tab', { name: 'Overlay' }));
 
-    expect(screen.getAllByText('Sphinx of black quartz, judge my vow')).toHaveLength(3);
-    expect(screen.getAllByLabelText('Font family')[0]).toHaveDisplayValue('Segoe UI');
+    expect(screen.getByText('Live Preview')).toBeInTheDocument();
+    expect(screen.getAllByText('Sample Track').length).toBeGreaterThan(0);
+    expect(screen.queryByRole('button', { name: 'Copy OBS Overlay URL' })).not.toBeInTheDocument();
+  });
+
+  it('copies the overlay url from overlay behavior', async () => {
+    Object.assign(navigator, {
+      clipboard: {
+        writeText: vi.fn().mockResolvedValue(undefined),
+      },
+    });
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Sample Track' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Overlay' }));
+
+    fireEvent.click(screen.getByRole('button', { name: /http:\/\/127\.0\.0\.1:17655\/overlay/i }));
+
+    await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith('http://127.0.0.1:17655/overlay'));
+  });
+
+  it('allows overlay sections to be collapsed and expanded', async () => {
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Sample Track' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Overlay' }));
+
+    const artworkToggle = screen.getByRole('button', { name: 'Artwork' });
+    expect(screen.getByLabelText('Artwork image size (px)')).toBeInTheDocument();
+
+    fireEvent.click(artworkToggle);
+    expect(screen.queryByLabelText('Artwork image size (px)')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Artwork' }));
+    expect(screen.getByLabelText('Artwork image size (px)')).toBeInTheDocument();
   });
 
   it('disables save when overlay hex colors are invalid', async () => {
@@ -346,11 +482,11 @@ describe('App', () => {
     await screen.findByRole('heading', { name: 'Sample Track' });
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
     fireEvent.click(screen.getByRole('tab', { name: 'Overlay' }));
-    fireEvent.change(screen.getByLabelText('Overlay background color'), {
+    fireEvent.change(screen.getAllByLabelText('Background color')[0], {
       target: { value: 'not-a-color' },
     });
 
-    expect(screen.getByLabelText('Overlay background color')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getAllByLabelText('Background color')[0]).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByRole('button', { name: 'Save settings' })).toBeDisabled();
   });
 
@@ -392,7 +528,7 @@ describe('App', () => {
     expect(screen.queryByText('Output folder')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('tab', { name: 'Overlay' }));
-    expect(screen.getByText('http://127.0.0.1:17655/overlay')).toBeInTheDocument();
+    expect(screen.getAllByText('http://127.0.0.1:17655/overlay').length).toBeGreaterThan(0);
   });
 
   it('shows disabled when the overlay url is empty', async () => {

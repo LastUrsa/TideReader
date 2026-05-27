@@ -130,14 +130,14 @@ public sealed class MediaSessionDetector(
             return "ignored: paused";
         }
 
-        if (!candidate.IsPlaying && !candidate.IsPaused)
-        {
-            return "ignored: inactive session";
-        }
-
         if (settings.IgnoreStaleSessions && candidate.IsStale)
         {
             return "ignored: stale session";
+        }
+
+        if (!candidate.IsPlaying && !candidate.IsPaused)
+        {
+            return "ignored: inactive session";
         }
 
         if (selected is not null && !SameSource(candidate.Result, selected.Result))
@@ -277,6 +277,7 @@ public sealed class TidalPlaybackProvider : IPlaybackProvider
     }
 
     private static bool IsStale(MediaSessionSnapshot snapshot, BrowserSettings settings) =>
+        !snapshot.IsPlaying &&
         (DateTimeOffset.UtcNow - snapshot.LastUpdatedUtc).TotalSeconds > settings.StaleSessionAfterSeconds;
 
     private static int ResolvePriority(string site, BrowserSettings settings)
@@ -403,6 +404,7 @@ public sealed class BrowserMediaProvider : IPlaybackProvider
     }
 
     private static bool IsStale(MediaSessionSnapshot snapshot, BrowserSettings settings) =>
+        !snapshot.IsPlaying &&
         (DateTimeOffset.UtcNow - snapshot.LastUpdatedUtc).TotalSeconds > settings.StaleSessionAfterSeconds;
 
     private static string GetSourceLabel(string site) => site switch

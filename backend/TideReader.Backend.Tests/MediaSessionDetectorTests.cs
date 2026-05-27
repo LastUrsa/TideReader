@@ -369,6 +369,54 @@ public sealed class MediaSessionDetectorTests
     }
 
     [Fact]
+    public async Task DetectAsync_KeepsActiveBrowserSessionEligible_EvenWhenMetadataTimestampIsOld()
+    {
+        var settings = new Settings
+        {
+            BrowserSettings = new BrowserSettings
+            {
+                IgnoreStaleSessions = true,
+                StaleSessionAfterSeconds = 5
+            }
+        };
+        var detector = CreateDetector([
+            new MediaSessionSnapshot(
+                SessionId: "browser-playing-old-timestamp",
+                SourceAppId: "chrome.exe youtube",
+                Browser: "chrome",
+                Site: "",
+                IsPlaying: true,
+                IsPaused: false,
+                Title: "Artist - Browser Track",
+                Artist: "",
+                Album: "",
+                DurationMs: 0,
+                LastUpdatedUtc: DateTimeOffset.UtcNow.AddMinutes(-2),
+                ArtworkBytes: []),
+            new MediaSessionSnapshot(
+                SessionId: "tidal-inactive",
+                SourceAppId: "TIDAL.exe",
+                Browser: "",
+                Site: "",
+                IsPlaying: false,
+                IsPaused: false,
+                Title: "Stopped Tidal Track",
+                Artist: "Stopped Artist",
+                Album: "",
+                DurationMs: 0,
+                LastUpdatedUtc: DateTimeOffset.UtcNow,
+                ArtworkBytes: [])
+        ]);
+
+        var result = await detector.DetectAsync(new DetectionResult(), settings, CancellationToken.None);
+
+        Assert.NotNull(result.Result);
+        Assert.Equal("browser", result.Result!.Provider);
+        Assert.Equal("Browser Track", result.Result.Title);
+        Assert.DoesNotContain(result.BrowserDebug.Sessions, session => session.SessionId == "browser-playing-old-timestamp" && session.DecisionReason == "ignored: stale session");
+    }
+
+    [Fact]
     public async Task DetectAsync_ReportsIgnoredReasons_ForPausedStaleAndLowerPrioritySessions()
     {
         var settings = new Settings
@@ -399,7 +447,7 @@ public sealed class MediaSessionDetectorTests
                 SourceAppId: "chrome.exe generic",
                 Browser: "chrome",
                 Site: "",
-                IsPlaying: true,
+                IsPlaying: false,
                 IsPaused: false,
                 Title: "Old Generic Track",
                 Artist: "",

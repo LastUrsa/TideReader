@@ -476,6 +476,162 @@ describe('App', () => {
     expect(screen.getByLabelText('Artwork image size (px)')).toBeInTheDocument();
   });
 
+  it('shows gradient-only controls, filters two-color presets, and resets overlay defaults', async () => {
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Sample Track' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Overlay' }));
+
+    fireEvent.change(screen.getByLabelText('Background mode'), {
+      target: { value: 'gradient' },
+    });
+
+    expect(screen.getByLabelText('Gradient colors')).toBeInTheDocument();
+    expect(screen.getByLabelText('Gradient preset')).toBeInTheDocument();
+    expect(screen.getByLabelText('Gradient Angle')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Gradient colors'), {
+      target: { value: '2' },
+    });
+
+    expect(screen.queryByLabelText('Gradient Color 3')).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Stream Neon' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('option', { name: 'Subtle Glass' })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getAllByLabelText('Hex color')[0], {
+      target: { value: 'bad-color' },
+    });
+    expect(screen.getByText(/Enter a valid font family, positive font size/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset Overlay Styling to Defaults' }));
+
+    expect(screen.getAllByLabelText('Hex color')[0]).toHaveValue('#EBEBEB');
+    expect(screen.getByLabelText('Background mode')).toHaveValue('solid');
+  });
+
+  it('edits the remaining container and status pill controls', async () => {
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Sample Track' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Overlay' }));
+
+    fireEvent.change(screen.getByLabelText('Background mode'), {
+      target: { value: 'gradient' },
+    });
+    fireEvent.change(screen.getByLabelText('Gradient colors'), {
+      target: { value: '3' },
+    });
+    fireEvent.change(screen.getByLabelText('Gradient preset'), {
+      target: { value: 'Stream Neon' },
+    });
+    fireEvent.change(screen.getByLabelText('Gradient Color 1'), {
+      target: { value: '#101010' },
+    });
+    fireEvent.change(screen.getByLabelText('Gradient Color 2'), {
+      target: { value: '#202020' },
+    });
+    fireEvent.change(screen.getByLabelText('Gradient Color 3'), {
+      target: { value: '#303030' },
+    });
+    fireEvent.change(screen.getByLabelText('Gradient Angle'), {
+      target: { value: '220' },
+    });
+    fireEvent.change(screen.getAllByLabelText('Corner radius (px)')[0], {
+      target: { value: '24' },
+    });
+    fireEvent.change(screen.getByLabelText('Padding (px)'), {
+      target: { value: '20' },
+    });
+    fireEvent.change(screen.getByLabelText('Gap (px)'), {
+      target: { value: '18' },
+    });
+    fireEvent.change(screen.getByLabelText('Border color'), {
+      target: { value: '#123456' },
+    });
+    fireEvent.change(screen.getByLabelText('Border width (px)'), {
+      target: { value: '3' },
+    });
+
+    fireEvent.change(screen.getByLabelText('Text color'), {
+      target: { value: '#C0FFEE' },
+    });
+    fireEvent.change(screen.getAllByLabelText('Font family')[3], {
+      target: { value: 'Arial' },
+    });
+    fireEvent.change(screen.getAllByLabelText('Font size (px)')[3], {
+      target: { value: '14' },
+    });
+    fireEvent.change(screen.getAllByLabelText('Corner radius (px)')[1], {
+      target: { value: '12' },
+    });
+    fireEvent.change(screen.getByLabelText('Horizontal padding (px)'), {
+      target: { value: '11' },
+    });
+    fireEvent.change(screen.getByLabelText('Vertical padding (px)'), {
+      target: { value: '6' },
+    });
+    fireEvent.click(screen.getAllByLabelText('Bold')[3]);
+    fireEvent.click(screen.getAllByLabelText('Italic')[3]);
+    fireEvent.click(screen.getAllByLabelText('Underline')[3]);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Live Preview' }));
+    expect(screen.queryByText('Sample Song')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Live Preview' }));
+    expect(screen.getAllByText('Sample Track').length).toBeGreaterThan(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+
+    await waitFor(() => expect(apiMocks.saveSettings).toHaveBeenCalledWith(expect.objectContaining({
+      overlaySettings: expect.objectContaining({
+        overlayContainerStyle: expect.objectContaining({
+          backgroundMode: 'gradient',
+          cornerRadiusPx: 24,
+          paddingPx: 20,
+          gapPx: 18,
+          borderColorHex: '#123456',
+          borderWidthPx: 3,
+          gradient: expect.objectContaining({
+            colorCount: 3,
+            preset: 'Stream Neon',
+            color1Hex: '#101010',
+            color2Hex: '#202020',
+            color3Hex: '#303030',
+            angleDeg: 220,
+          }),
+        }),
+        statusPillStyle: expect.objectContaining({
+          textColorHex: '#C0FFEE',
+          fontFamily: 'Arial',
+          fontSizePx: 14,
+          cornerRadiusPx: 12,
+          paddingHorizontalPx: 11,
+          paddingVerticalPx: 6,
+          bold: true,
+          italic: true,
+          underline: true,
+        }),
+      }),
+    })));
+  });
+
+  it('shows saving state while persisting settings', async () => {
+    const deferred = createDeferred<AppState>();
+    apiMocks.saveSettings.mockReturnValueOnce(deferred.promise);
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Sample Track' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+
+    expect(screen.getByRole('button', { name: 'Saving...' })).toBeDisabled();
+
+    deferred.resolve(createState());
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Saving...' })).not.toBeInTheDocument());
+  });
+
   it('disables save when overlay hex colors are invalid', async () => {
     render(<App />);
 

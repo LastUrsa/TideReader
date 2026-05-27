@@ -56,6 +56,33 @@ export type OverlaySettings = {
   textAlign: 'Left' | 'Center' | 'Right';
   showAppName: boolean;
   showPlaybackState: boolean;
+  showPlaybackProvider: boolean;
+};
+
+export type BrowserSupportSettings = {
+  chromeEnabled: boolean;
+  edgeEnabled: boolean;
+  firefoxEnabled: boolean;
+  braveEnabled: boolean;
+  operaEnabled: boolean;
+};
+
+export type BrowserSettings = {
+  enabled: boolean;
+  activeSourceMode: 'auto' | 'tidal' | 'browser';
+  supportedBrowsers: BrowserSupportSettings;
+  sourcePriority: string[];
+  sourceSwitchCooldownMs: number;
+  allowGenericPlayback: boolean;
+  preferTidalOverBrowser: boolean;
+  metadataCleanupEnabled: boolean;
+  browserArtworkEnabled: boolean;
+  youTubeVideoImageFallbackEnabled: boolean;
+  debugLoggingEnabled: boolean;
+  ignorePausedSessions: boolean;
+  ignoreStaleSessions: boolean;
+  staleSessionAfterSeconds: number;
+  showRawBrowserMetadata: boolean;
 };
 
 export type Settings = {
@@ -70,6 +97,7 @@ export type Settings = {
   metadataProviderMode: 'Off' | 'MusicBrainzOnly' | 'MusicBrainzWithFallbacks';
   themeMode: 'Dark' | 'Light';
   overlaySettings: OverlaySettings;
+  browserSettings: BrowserSettings;
 };
 
 export type DetectionResult = {
@@ -84,6 +112,37 @@ export type DetectionResult = {
   confidence: number;
   detectedText: string;
   metadataSource: string;
+  provider: string;
+  browser: string;
+  site: string;
+  rawTitle: string;
+  rawArtist: string;
+  rawAlbum: string;
+  selectionReason: string;
+};
+
+export type BrowserSessionDebugInfo = {
+  provider: string;
+  browser: string;
+  site: string;
+  playbackState: string;
+  sourceAppId: string;
+  rawTitle: string;
+  rawArtist: string;
+  rawAlbum: string;
+  parsedTitle: string;
+  parsedArtist: string;
+  parsedAlbum: string;
+  confidence: number;
+  hasArtwork: boolean;
+  isSelected: boolean;
+  decisionReason: string;
+  sessionId: string;
+  lastUpdatedUtc: string;
+};
+
+export type BrowserDebugState = {
+  sessions: BrowserSessionDebugInfo[];
 };
 
 export type AppState = {
@@ -98,6 +157,7 @@ export type AppState = {
   manualInput: string;
   startupReady: boolean;
   statusMessage: string;
+  browserDebug: BrowserDebugState;
 };
 
 export type UpdateInfo = {

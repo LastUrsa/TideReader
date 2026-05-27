@@ -26,7 +26,10 @@ public sealed class OutputWriter : IOutputWriter
                 DurationMs = state.DurationMs,
                 ArtworkPath = state.ArtworkPath,
                 Source = state.Source,
-                Confidence = state.Confidence
+                Confidence = state.Confidence,
+                Provider = state.Provider,
+                Browser = state.Browser,
+                Site = state.Site
             };
 
             var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions(JsonSerializerDefaults.Web) { WriteIndented = true });

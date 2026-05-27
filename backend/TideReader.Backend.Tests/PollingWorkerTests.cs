@@ -84,11 +84,11 @@ public sealed class PollingWorkerTests
         public int DetectCalls { get; private set; }
         public TaskCompletionSource FirstDetection { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public Task<DetectionResult?> DetectAsync(CancellationToken cancellationToken)
+        public Task<PlaybackDetectionOutcome> DetectAsync(DetectionResult previous, Settings settings, CancellationToken cancellationToken)
         {
             DetectCalls++;
             FirstDetection.TrySetResult();
-            return Task.FromResult<DetectionResult?>(new DetectionResult
+            return Task.FromResult(new PlaybackDetectionOutcome(new DetectionResult
             {
                 Status = "playing",
                 Artist = "Worker Artist",
@@ -96,7 +96,7 @@ public sealed class PollingWorkerTests
                 Album = "Worker Album",
                 Method = "media_session",
                 Confidence = 0.91
-            });
+            }, new BrowserDebugState()));
         }
     }
 

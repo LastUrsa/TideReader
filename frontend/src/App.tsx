@@ -2,35 +2,45 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
 import './App.css';
 import NowPlayingOverlayView from './NowPlayingOverlayView';
 import { AppState, DetectionResult, GradientSettings, OverlayTextStyle, Settings, UpdateInfo, checkForUpdates as checkForUpdatesApi, chooseOutputFolder as chooseOutputFolderApi, getArtworkUrl, getState, getSystemFonts, openOutputFolder as openOutputFolderApi, openReleasePage as openReleasePageApi, runDetectionNow as runDetectionNowApi, saveSettings as saveSettingsApi } from './api';
-import { cloneOverlaySettings, createDefaultSettings, defaultOverlaySettings, formatPlaybackStatus, getGradientPresetOptions, gradientColorCountOptions, isGradientAngleValid, isOpacityValid, isPositiveNumber, isValidHexColor, isZeroOrPositiveNumber, overlayBackgroundModeOptions, overlaySettingsHaveErrors, overlayTextStyleHasErrors, sampleNowPlaying } from './overlay';
+import { cloneOverlaySettings, createDefaultSettings, defaultOverlaySettings, formatPlaybackStatus, getAlbumDisplayText, getArtistDisplayText, getGradientPresetOptions, gradientColorCountOptions, isGradientAngleValid, isOpacityValid, isPositiveNumber, isValidHexColor, isZeroOrPositiveNumber, overlayBackgroundModeOptions, overlaySettingsHaveErrors, overlayTextStyleHasErrors, sampleNowPlaying, shouldHideArtworkFallback } from './overlay';
 
-type SettingsTab = 'general' | 'overlay';
+type SettingsTab = 'general' | 'browser' | 'overlay';
 
 const emptyState: AppState = {
   settings: createDefaultSettings(),
-  nowPlaying: {
-    status: 'not_running',
-    title: '',
-    artist: '',
-    album: '',
+    nowPlaying: {
+      status: 'not_running',
+      title: '',
+      artist: '',
+      album: '',
     durationMs: 0,
     artworkPath: '',
     source: 'TIDAL',
-    method: 'none',
-    confidence: 0,
-    detectedText: '',
-    metadataSource: '',
-  },
+      method: 'none',
+      confidence: 0,
+      detectedText: '',
+      metadataSource: '',
+      provider: 'tidal',
+      browser: '',
+      site: '',
+      rawTitle: '',
+      rawArtist: '',
+      rawAlbum: '',
+      selectionReason: '',
+    },
   outputFolder: '',
   appVersion: '',
   artworkRevision: 0,
   overlayUrl: '',
   logPath: '',
   lastError: '',
-  manualInput: '',
-  startupReady: false,
-  statusMessage: 'Loading...',
-};
+    manualInput: '',
+    startupReady: false,
+    statusMessage: 'Loading...',
+    browserDebug: {
+      sessions: [],
+    },
+  };
 
 function notifyHostLayout(mode: 'compact' | 'settings') {
   const bridge = (window as Window & {
@@ -142,6 +152,7 @@ function App() {
   const copiedUrlTimerRef = useRef<number | null>(null);
   const artworkUrl = state.nowPlaying.artworkPath ? getArtworkUrl(state.artworkRevision) : '';
   const hasArtwork = Boolean(artworkUrl) && !artworkFailed;
+  const hideArtworkFallback = !hasArtwork && shouldHideArtworkFallback(state.nowPlaying);
   const effectiveThemeMode = settingsOpen ? draft.themeMode : state.settings.themeMode;
   const hasOverlayErrors = overlaySettingsHaveErrors(draft);
   const previewNowPlaying: DetectionResult = state.nowPlaying.title || state.nowPlaying.artist || state.nowPlaying.album || state.nowPlaying.artworkPath
@@ -290,24 +301,27 @@ function App() {
           <button className="ghost chrome-button" onClick={openSettings}>Settings</button>
         </section>
         <section className="overlay-panel">
-          <div className={`overlay-art ${hasArtwork ? 'has-artwork' : ''}`} style={{ borderRadius: 0 }}>
-            {hasArtwork ? (
-              <img
-                key={String(state.artworkRevision)}
-                className="cover-image"
-                src={artworkUrl}
-                alt={`${state.nowPlaying.title || 'Current track'} cover art`}
-                style={{ borderRadius: 0 }}
-                onError={() => setArtworkFailed(true)}
-              />
-            ) : (
-              <span>{state.nowPlaying.title ? 'TIDAL' : 'Idle'}</span>
-            )}
-          </div>
+          {!hideArtworkFallback ? (
+            <div className={`overlay-art ${hasArtwork ? 'has-artwork' : ''}`} style={{ borderRadius: 0 }}>
+              {hasArtwork ? (
+                <img
+                  key={String(state.artworkRevision)}
+                  className="cover-image"
+                  src={artworkUrl}
+                  alt={`${state.nowPlaying.title || 'Current track'} cover art`}
+                  style={{ borderRadius: 0 }}
+                  onError={() => setArtworkFailed(true)}
+                />
+              ) : (
+                <span>{state.nowPlaying.title ? state.nowPlaying.source : 'Idle'}</span>
+              )}
+            </div>
+          ) : null}
           <div className="overlay-copy">
             <h1>{state.nowPlaying.title || 'Waiting for playback'}</h1>
-            <p className="artist-line">{state.nowPlaying.artist || 'Artist unavailable'}</p>
-            <p className="album-line">{state.nowPlaying.album || 'Album unavailable'}</p>
+            <p className="artist-line">{getArtistDisplayText(state.nowPlaying, 'Artist unavailable')}</p>
+            <p className="album-line">{getAlbumDisplayText(state.nowPlaying, 'Album unavailable')}</p>
+            {state.nowPlaying.selectionReason ? <p className="album-line">{state.nowPlaying.selectionReason}</p> : null}
           </div>
           <div className="overlay-actions">
             <button className="ghost compact-button" onClick={runNow}>Refresh</button>
@@ -326,6 +340,7 @@ function App() {
             </div>
             <div className="settings-tabs" role="tablist" aria-label="Settings sections">
               <button className={`tab-button ${activeTab === 'general' ? 'active' : ''}`} role="tab" aria-selected={activeTab === 'general'} onClick={() => setActiveTab('general')}>General</button>
+              <button className={`tab-button ${activeTab === 'browser' ? 'active' : ''}`} role="tab" aria-selected={activeTab === 'browser'} onClick={() => setActiveTab('browser')}>Browser</button>
               <button className={`tab-button ${activeTab === 'overlay' ? 'active' : ''}`} role="tab" aria-selected={activeTab === 'overlay'} onClick={() => setActiveTab('overlay')}>Overlay</button>
             </div>
             {activeTab === 'general' ? (
@@ -396,6 +411,200 @@ function App() {
                   <Toggle label="Launch at Windows startup" checked={draft.launchAtStartup} onChange={(value) => setDraft({ ...draft, launchAtStartup: value })} />
                 </div>
               </>
+            ) : activeTab === 'browser' ? (
+              <div className="overlay-settings">
+                <CollapsibleSection title="Enable Browser Media Support" isOpen={true} onToggle={() => undefined}>
+                  <div className="toggle-list">
+                    <Toggle label="Enable browser media support" checked={draft.browserSettings.enabled} onChange={(value) => setDraft({
+                      ...draft,
+                      browserSettings: {
+                        ...draft.browserSettings,
+                        enabled: value,
+                      },
+                    })} />
+                  </div>
+                </CollapsibleSection>
+
+                <CollapsibleSection title="Supported Browsers" isOpen={true} onToggle={() => undefined}>
+                  <div className="toggle-list">
+                    <Toggle label="Chrome" checked={draft.browserSettings.supportedBrowsers.chromeEnabled} onChange={(value) => setDraft({
+                      ...draft,
+                      browserSettings: {
+                        ...draft.browserSettings,
+                        supportedBrowsers: { ...draft.browserSettings.supportedBrowsers, chromeEnabled: value },
+                      },
+                    })} />
+                    <Toggle label="Edge" checked={draft.browserSettings.supportedBrowsers.edgeEnabled} onChange={(value) => setDraft({
+                      ...draft,
+                      browserSettings: {
+                        ...draft.browserSettings,
+                        supportedBrowsers: { ...draft.browserSettings.supportedBrowsers, edgeEnabled: value },
+                      },
+                    })} />
+                    <Toggle label="Firefox" checked={draft.browserSettings.supportedBrowsers.firefoxEnabled} onChange={(value) => setDraft({
+                      ...draft,
+                      browserSettings: {
+                        ...draft.browserSettings,
+                        supportedBrowsers: { ...draft.browserSettings.supportedBrowsers, firefoxEnabled: value },
+                      },
+                    })} />
+                    <Toggle label="Brave" checked={draft.browserSettings.supportedBrowsers.braveEnabled} onChange={(value) => setDraft({
+                      ...draft,
+                      browserSettings: {
+                        ...draft.browserSettings,
+                        supportedBrowsers: { ...draft.browserSettings.supportedBrowsers, braveEnabled: value },
+                      },
+                    })} />
+                    <Toggle label="Opera" checked={draft.browserSettings.supportedBrowsers.operaEnabled} onChange={(value) => setDraft({
+                      ...draft,
+                      browserSettings: {
+                        ...draft.browserSettings,
+                        supportedBrowsers: { ...draft.browserSettings.supportedBrowsers, operaEnabled: value },
+                      },
+                    })} />
+                  </div>
+                </CollapsibleSection>
+
+                <CollapsibleSection title="Source Selection" isOpen={true} onToggle={() => undefined}>
+                  <div className="field-grid">
+                    <label>
+                      Active source mode
+                      <select value={draft.browserSettings.activeSourceMode} onChange={(event) => setDraft({
+                        ...draft,
+                        browserSettings: {
+                          ...draft.browserSettings,
+                          activeSourceMode: event.target.value as Settings['browserSettings']['activeSourceMode'],
+                        },
+                      })}>
+                        <option value="auto">Auto</option>
+                        <option value="tidal">TIDAL only</option>
+                        <option value="browser">Browser only</option>
+                      </select>
+                    </label>
+                    <label>
+                      Source switch cooldown (ms)
+                      <input type="number" value={draft.browserSettings.sourceSwitchCooldownMs} onChange={(event) => setDraft({
+                        ...draft,
+                        browserSettings: {
+                          ...draft.browserSettings,
+                          sourceSwitchCooldownMs: Number(event.target.value),
+                        },
+                      })} />
+                    </label>
+                  </div>
+                  <div className="toggle-list">
+                    <Toggle label="Prefer TIDAL over browser playback" checked={draft.browserSettings.preferTidalOverBrowser} onChange={(value) => setDraft({
+                      ...draft,
+                      browserSettings: {
+                        ...draft.browserSettings,
+                        preferTidalOverBrowser: value,
+                      },
+                    })} />
+                    <Toggle label="Allow generic browser playback" checked={draft.browserSettings.allowGenericPlayback} onChange={(value) => setDraft({
+                      ...draft,
+                      browserSettings: {
+                        ...draft.browserSettings,
+                        allowGenericPlayback: value,
+                      },
+                    })} />
+                  </div>
+                </CollapsibleSection>
+
+                <CollapsibleSection title="Metadata Cleanup" isOpen={true} onToggle={() => undefined}>
+                  <div className="toggle-list">
+                    <Toggle label="Enable metadata cleanup/parsing" checked={draft.browserSettings.metadataCleanupEnabled} onChange={(value) => setDraft({
+                      ...draft,
+                      browserSettings: {
+                        ...draft.browserSettings,
+                        metadataCleanupEnabled: value,
+                      },
+                    })} />
+                    <Toggle label="Enable browser artwork retrieval" checked={draft.browserSettings.browserArtworkEnabled} onChange={(value) => setDraft({
+                      ...draft,
+                      browserSettings: {
+                        ...draft.browserSettings,
+                        browserArtworkEnabled: value,
+                      },
+                    })} />
+                  </div>
+                </CollapsibleSection>
+
+                <CollapsibleSection title="YouTube Artwork" isOpen={true} onToggle={() => undefined}>
+                  <div className="toggle-list">
+                    <Toggle label="Use browser video image when album art is unavailable" checked={draft.browserSettings.youTubeVideoImageFallbackEnabled} onChange={(value) => setDraft({
+                      ...draft,
+                      browserSettings: {
+                        ...draft.browserSettings,
+                        youTubeVideoImageFallbackEnabled: value,
+                      },
+                    })} />
+                  </div>
+                  <p className="note">Priority stays: album art, then browser video image, then removed.</p>
+                </CollapsibleSection>
+
+                <CollapsibleSection title="Session Filtering" isOpen={true} onToggle={() => undefined}>
+                  <div className="field-grid">
+                    <label>
+                      Stale session timeout (seconds)
+                      <input type="number" value={draft.browserSettings.staleSessionAfterSeconds} onChange={(event) => setDraft({
+                        ...draft,
+                        browserSettings: {
+                          ...draft.browserSettings,
+                          staleSessionAfterSeconds: Number(event.target.value),
+                        },
+                      })} />
+                    </label>
+                  </div>
+                  <div className="toggle-list">
+                    <Toggle label="Ignore paused sessions" checked={draft.browserSettings.ignorePausedSessions} onChange={(value) => setDraft({
+                      ...draft,
+                      browserSettings: {
+                        ...draft.browserSettings,
+                        ignorePausedSessions: value,
+                      },
+                    })} />
+                    <Toggle label="Ignore stale sessions" checked={draft.browserSettings.ignoreStaleSessions} onChange={(value) => setDraft({
+                      ...draft,
+                      browserSettings: {
+                        ...draft.browserSettings,
+                        ignoreStaleSessions: value,
+                      },
+                    })} />
+                  </div>
+                </CollapsibleSection>
+
+                <CollapsibleSection title="Debug" isOpen={true} onToggle={() => undefined}>
+                  <div className="toggle-list">
+                    <Toggle label="Enable browser detection logging" checked={draft.browserSettings.debugLoggingEnabled} onChange={(value) => setDraft({
+                      ...draft,
+                      browserSettings: {
+                        ...draft.browserSettings,
+                        debugLoggingEnabled: value,
+                      },
+                    })} />
+                    <Toggle label="Show raw browser metadata" checked={draft.browserSettings.showRawBrowserMetadata} onChange={(value) => setDraft({
+                      ...draft,
+                      browserSettings: {
+                        ...draft.browserSettings,
+                        showRawBrowserMetadata: value,
+                      },
+                    })} />
+                  </div>
+                  <div className="browser-debug-list">
+                    {state.browserDebug.sessions.length === 0 ? <p className="note">No browser sessions detected yet.</p> : state.browserDebug.sessions.map((session) => (
+                      <section key={session.sessionId} className="subsection-card">
+                        <h4>{session.site || 'generic'} · {session.browser || session.provider}</h4>
+                        <p className="note">{session.decisionReason}</p>
+                        <p className="note">State: {session.playbackState} · Confidence: {session.confidence.toFixed(2)} · Artwork: {session.hasArtwork ? 'yes' : 'no'}</p>
+                        <p className="note">Parsed: {session.parsedArtist || 'Unknown artist'} - {session.parsedTitle || 'Unknown title'}</p>
+                        {draft.browserSettings.showRawBrowserMetadata ? (
+                          <p className="note">Raw: {session.rawArtist || 'n/a'} | {session.rawTitle || 'n/a'} | {session.rawAlbum || 'n/a'}</p>
+                        ) : null}
+                      </section>
+                    ))}
+                  </div>
+                </CollapsibleSection>
+              </div>
             ) : (
               <div className="overlay-settings">
                 <CollapsibleSection
@@ -429,6 +638,13 @@ function App() {
                       overlaySettings: {
                         ...draft.overlaySettings,
                         showPlaybackState: value,
+                      },
+                    })} />
+                    <Toggle label="Show playback provider" checked={draft.overlaySettings.showPlaybackProvider} onChange={(value) => setDraft({
+                      ...draft,
+                      overlaySettings: {
+                        ...draft.overlaySettings,
+                        showPlaybackProvider: value,
                       },
                     })} />
                   </div>

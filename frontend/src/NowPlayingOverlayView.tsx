@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import type { DetectionResult, OverlaySettings } from './api';
-import { formatPlaybackStatus, getOverlayContainerBackground, truncateOverlayText, withAlpha } from './overlay';
+import { formatPlaybackStatus, getAlbumDisplayText, getArtistDisplayText, getOverlayContainerBackground, shouldHideArtworkFallback, truncateOverlayText, withAlpha } from './overlay';
 
 type NowPlayingOverlayViewProps = {
   overlaySettings: OverlaySettings;
@@ -41,8 +41,9 @@ export default function NowPlayingOverlayView({
   const artistFallback = fallbackMode === 'app' ? 'Artist unavailable' : 'Sample Artist';
   const albumFallback = fallbackMode === 'app' ? 'Album unavailable' : 'Sample Album';
   const artworkFallbackLabel = fallbackMode === 'app'
-    ? (nowPlaying.title ? 'TIDAL' : 'Idle')
+    ? (nowPlaying.title ? nowPlaying.source || 'Browser' : 'Idle')
     : 'ART';
+  const hideArtworkFallback = !hasArtwork && fallbackMode === 'app' && shouldHideArtworkFallback(nowPlaying);
 
   return (
     <section
@@ -66,13 +67,15 @@ export default function NowPlayingOverlayView({
       data-image-position={overlaySettings.imagePosition.toLowerCase()}
       data-text-align={overlaySettings.textAlign.toLowerCase()}
     >
-      <div className={`np-overlay-art ${hasArtwork ? 'has-artwork' : ''}`} style={{ borderRadius: 0 }}>
-        {hasArtwork ? (
-          <img className="np-cover-image" src={artworkUrl} alt={artworkAlt} style={{ borderRadius: 0 }} onError={onArtworkError} />
-        ) : (
-          <span>{artworkFallbackLabel}</span>
-        )}
-      </div>
+      {!hideArtworkFallback ? (
+        <div className={`np-overlay-art ${hasArtwork ? 'has-artwork' : ''}`} style={{ borderRadius: 0 }}>
+          {hasArtwork ? (
+            <img className="np-cover-image" src={artworkUrl} alt={artworkAlt} style={{ borderRadius: 0 }} onError={onArtworkError} />
+          ) : (
+            <span>{artworkFallbackLabel}</span>
+          )}
+        </div>
+      ) : null}
       <div className="np-overlay-copy">
         {topLineVisible ? (
           <div className="np-overlay-topline">
@@ -91,16 +94,17 @@ export default function NowPlayingOverlayView({
                 {formatPlaybackStatus(status)}
               </div>
             ) : null}
+            {overlaySettings.showPlaybackProvider ? <div className="np-overlay-brand">{nowPlaying.source || 'TideReader'}</div> : null}
           </div>
         ) : null}
         <h1 className="np-overlay-title" style={textStyleToCss(overlaySettings.songTextStyle)}>
           {truncateOverlayText(nowPlaying.title, overlaySettings.songTextStyle.maxCharacters, titleFallback)}
         </h1>
         <p className="np-artist-line" style={textStyleToCss(overlaySettings.artistTextStyle)}>
-          {truncateOverlayText(nowPlaying.artist, overlaySettings.artistTextStyle.maxCharacters, artistFallback)}
+          {truncateOverlayText(getArtistDisplayText(nowPlaying, artistFallback), overlaySettings.artistTextStyle.maxCharacters, artistFallback)}
         </p>
         <p className="np-album-line" style={textStyleToCss(overlaySettings.albumTextStyle)}>
-          {truncateOverlayText(nowPlaying.album, overlaySettings.albumTextStyle.maxCharacters, albumFallback)}
+          {truncateOverlayText(getAlbumDisplayText(nowPlaying, albumFallback), overlaySettings.albumTextStyle.maxCharacters, albumFallback)}
         </p>
       </div>
     </section>

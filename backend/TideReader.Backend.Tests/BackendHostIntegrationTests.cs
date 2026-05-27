@@ -462,8 +462,8 @@ public sealed class BackendHostIntegrationTests
 
     private sealed class HostFakePlaybackDetector(DetectionResult? result) : IPlaybackDetector
     {
-        public Task<DetectionResult?> DetectAsync(CancellationToken cancellationToken) =>
-            Task.FromResult(result is null ? null : BridgeStatePolicy.CloneDetection(result));
+        public Task<PlaybackDetectionOutcome> DetectAsync(DetectionResult previous, Settings settings, CancellationToken cancellationToken) =>
+            Task.FromResult(new PlaybackDetectionOutcome(result is null ? null : BridgeStatePolicy.CloneDetection(result), new BrowserDebugState()));
     }
 
     private sealed class HostFakeWindowTitleDetector : IWindowTitleDetector

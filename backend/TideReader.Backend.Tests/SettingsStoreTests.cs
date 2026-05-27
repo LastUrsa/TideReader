@@ -36,6 +36,7 @@ public sealed class SettingsStoreTests
             Assert.Equal("Left", settings.OverlaySettings.TextAlign);
             Assert.True(settings.OverlaySettings.ShowAppName);
             Assert.True(settings.OverlaySettings.ShowPlaybackState);
+            Assert.True(settings.BrowserSettings.YouTubeVideoImageFallbackEnabled);
             Assert.Equal(0, settings.OverlaySettings.SongTextStyle.MaxCharacters);
             Assert.Equal(0, settings.OverlaySettings.ArtistTextStyle.MaxCharacters);
             Assert.Equal(0, settings.OverlaySettings.AlbumTextStyle.MaxCharacters);
@@ -66,6 +67,12 @@ public sealed class SettingsStoreTests
                 LaunchAtStartup = true,
                 MetadataProviderMode = "MusicBrainzOnly",
                 ThemeMode = "Light",
+                BrowserSettings = new TideReader.Backend.Models.BrowserSettings
+                {
+                    Enabled = true,
+                    ActiveSourceMode = "browser",
+                    YouTubeVideoImageFallbackEnabled = false
+                },
                 OverlaySettings = new TideReader.Backend.Models.OverlaySettings
                 {
                     SongTextStyle = new TideReader.Backend.Models.OverlayTextStyle
@@ -150,6 +157,7 @@ public sealed class SettingsStoreTests
             Assert.Equal(input.LaunchAtStartup, loaded.LaunchAtStartup);
             Assert.Equal(input.MetadataProviderMode, loaded.MetadataProviderMode);
             Assert.Equal(input.ThemeMode, loaded.ThemeMode);
+            Assert.Equal(input.BrowserSettings.YouTubeVideoImageFallbackEnabled, loaded.BrowserSettings.YouTubeVideoImageFallbackEnabled);
             Assert.Equal(input.OverlaySettings.SongTextStyle.FontFamily, loaded.OverlaySettings.SongTextStyle.FontFamily);
             Assert.Equal(input.OverlaySettings.SongTextStyle.ColorHex, loaded.OverlaySettings.SongTextStyle.ColorHex);
             Assert.Equal(input.OverlaySettings.SongTextStyle.FontSizePx, loaded.OverlaySettings.SongTextStyle.FontSizePx);

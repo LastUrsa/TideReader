@@ -27,7 +27,9 @@ internal static class BridgeStatePolicy
 
     public static DetectionResult ClearSuspectCarryoverArtwork(DetectionResult previous, DetectionResult current)
     {
-        if (!string.Equals(current.Method, "media_session", StringComparison.OrdinalIgnoreCase) || current.ArtworkBytes.Length == 0)
+        if (!string.Equals(current.Method, "media_session", StringComparison.OrdinalIgnoreCase) ||
+            current.ArtworkBytes.Length == 0 ||
+            !string.Equals(current.Provider, "tidal", StringComparison.OrdinalIgnoreCase))
         {
             return current;
         }
@@ -54,7 +56,9 @@ internal static class BridgeStatePolicy
 
     public static DetectionResult SuppressArtworkUntilAlbumResolved(DetectionResult current, MetadataProviderMode mode)
     {
-        if (!string.Equals(current.Method, "media_session", StringComparison.OrdinalIgnoreCase) || current.ArtworkBytes.Length == 0)
+        if (!string.Equals(current.Method, "media_session", StringComparison.OrdinalIgnoreCase) ||
+            current.ArtworkBytes.Length == 0 ||
+            !string.Equals(current.Provider, "tidal", StringComparison.OrdinalIgnoreCase))
         {
             return current;
         }
@@ -83,6 +87,13 @@ internal static class BridgeStatePolicy
         left.SourceAppId == right.SourceAppId &&
         left.MatcherReason == right.MatcherReason &&
         left.MetadataSource == right.MetadataSource &&
+        left.Provider == right.Provider &&
+        left.Browser == right.Browser &&
+        left.Site == right.Site &&
+        left.RawTitle == right.RawTitle &&
+        left.RawArtist == right.RawArtist &&
+        left.RawAlbum == right.RawAlbum &&
+        left.SelectionReason == right.SelectionReason &&
         left.ArtworkBytes.AsSpan().SequenceEqual(right.ArtworkBytes);
 
     public static bool ArtworkChanged(DetectionResult left, DetectionResult right) =>
@@ -149,7 +160,14 @@ internal static class BridgeStatePolicy
         SourceAppId = input.SourceAppId,
         MatcherReason = input.MatcherReason,
         MetadataSource = input.MetadataSource,
-        ArtworkBytes = input.ArtworkBytes.ToArray()
+        ArtworkBytes = input.ArtworkBytes.ToArray(),
+        Provider = input.Provider,
+        Browser = input.Browser,
+        Site = input.Site,
+        RawTitle = input.RawTitle,
+        RawArtist = input.RawArtist,
+        RawAlbum = input.RawAlbum,
+        SelectionReason = input.SelectionReason
     };
 
     private static string Normalize(string input) => string.Join(' ', input.Trim().ToLowerInvariant().Split(' ', StringSplitOptions.RemoveEmptyEntries));

@@ -110,6 +110,43 @@ public sealed class OverlaySettings
     public string TextAlign { get; set; } = "Left";
     public bool ShowAppName { get; set; } = true;
     public bool ShowPlaybackState { get; set; } = true;
+    public bool ShowPlaybackProvider { get; set; }
+}
+
+public sealed class BrowserSupportSettings
+{
+    public bool ChromeEnabled { get; set; } = true;
+    public bool EdgeEnabled { get; set; } = true;
+    public bool FirefoxEnabled { get; set; } = true;
+    public bool BraveEnabled { get; set; } = true;
+    public bool OperaEnabled { get; set; }
+}
+
+public sealed class BrowserSettings
+{
+    public bool Enabled { get; set; } = true;
+    public string ActiveSourceMode { get; set; } = "auto";
+    public BrowserSupportSettings SupportedBrowsers { get; set; } = new();
+    public List<string> SourcePriority { get; set; } =
+    [
+        "tidal",
+        "youtubeMusic",
+        "bandcamp",
+        "soundcloud",
+        "youtube",
+        "genericBrowser"
+    ];
+    public int SourceSwitchCooldownMs { get; set; } = 5000;
+    public bool AllowGenericPlayback { get; set; } = true;
+    public bool PreferTidalOverBrowser { get; set; } = true;
+    public bool MetadataCleanupEnabled { get; set; } = true;
+    public bool BrowserArtworkEnabled { get; set; } = true;
+    public bool YouTubeVideoImageFallbackEnabled { get; set; } = true;
+    public bool DebugLoggingEnabled { get; set; }
+    public bool IgnorePausedSessions { get; set; } = true;
+    public bool IgnoreStaleSessions { get; set; } = true;
+    public int StaleSessionAfterSeconds { get; set; } = 30;
+    public bool ShowRawBrowserMetadata { get; set; }
 }
 
 public sealed class Settings
@@ -125,6 +162,33 @@ public sealed class Settings
     public string MetadataProviderMode { get; set; } = nameof(Models.MetadataProviderMode.MusicBrainzWithFallbacks);
     public string ThemeMode { get; set; } = nameof(Models.ThemeMode.Dark);
     public OverlaySettings OverlaySettings { get; set; } = new();
+    public BrowserSettings BrowserSettings { get; set; } = new();
+}
+
+public sealed class BrowserSessionDebugInfo
+{
+    public string Provider { get; set; } = "";
+    public string Browser { get; set; } = "";
+    public string Site { get; set; } = "generic";
+    public string PlaybackState { get; set; } = "not_running";
+    public string SourceAppId { get; set; } = "";
+    public string RawTitle { get; set; } = "";
+    public string RawArtist { get; set; } = "";
+    public string RawAlbum { get; set; } = "";
+    public string ParsedTitle { get; set; } = "";
+    public string ParsedArtist { get; set; } = "";
+    public string ParsedAlbum { get; set; } = "";
+    public double Confidence { get; set; }
+    public bool HasArtwork { get; set; }
+    public bool IsSelected { get; set; }
+    public string DecisionReason { get; set; } = "";
+    public string SessionId { get; set; } = "";
+    public DateTimeOffset LastUpdatedUtc { get; set; }
+}
+
+public sealed class BrowserDebugState
+{
+    public List<BrowserSessionDebugInfo> Sessions { get; set; } = [];
 }
 
 public sealed class DetectionResult
@@ -144,6 +208,13 @@ public sealed class DetectionResult
     public string MatcherReason { get; set; } = "";
     public string MetadataSource { get; set; } = "";
     public byte[] ArtworkBytes { get; set; } = [];
+    public string Provider { get; set; } = "tidal";
+    public string Browser { get; set; } = "";
+    public string Site { get; set; } = "";
+    public string RawTitle { get; set; } = "";
+    public string RawArtist { get; set; } = "";
+    public string RawAlbum { get; set; } = "";
+    public string SelectionReason { get; set; } = "";
 }
 
 public sealed class AppState
@@ -159,6 +230,7 @@ public sealed class AppState
     public string ManualInput { get; set; } = "";
     public bool StartupReady { get; set; } = true;
     public string StatusMessage { get; set; } = "Loading...";
+    public BrowserDebugState BrowserDebug { get; set; } = new();
 }
 
 public sealed class UpdateInfo
@@ -180,6 +252,9 @@ public sealed class NowPlayingFile
     public string ArtworkPath { get; set; } = "";
     public string Source { get; set; } = "TIDAL";
     public double Confidence { get; set; }
+    public string Provider { get; set; } = "tidal";
+    public string Browser { get; set; } = "";
+    public string Site { get; set; } = "";
 }
 
 public static class Defaults

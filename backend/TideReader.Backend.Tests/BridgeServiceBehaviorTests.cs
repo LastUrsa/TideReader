@@ -121,6 +121,57 @@ public sealed class BridgeServiceBehaviorTests
     }
 
     [Fact]
+    public async Task SaveSettingsAsync_NormalizesBrowserSettings()
+    {
+        using var harness = new BridgeServiceHarness();
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        var state = await harness.Service.SaveSettingsAsync(new Settings
+        {
+            OutputFolder = harness.Settings.OutputFolder,
+            BrowserSettings = new BrowserSettings
+            {
+                Enabled = true,
+                ActiveSourceMode = "bogus",
+                SupportedBrowsers = new BrowserSupportSettings
+                {
+                    ChromeEnabled = false,
+                    EdgeEnabled = false,
+                    FirefoxEnabled = false,
+                    BraveEnabled = false,
+                    OperaEnabled = true
+                },
+                SourcePriority = ["browser", "", "youtubeMusic"],
+                SourceSwitchCooldownMs = -1,
+                AllowGenericPlayback = false,
+                PreferTidalOverBrowser = false,
+                MetadataCleanupEnabled = false,
+                BrowserArtworkEnabled = false,
+                YouTubeVideoImageFallbackEnabled = false,
+                DebugLoggingEnabled = true,
+                IgnorePausedSessions = false,
+                IgnoreStaleSessions = false,
+                StaleSessionAfterSeconds = -9
+            },
+            OverlaySettings = new OverlaySettings()
+        }, CancellationToken.None);
+
+        Assert.Equal("auto", state.Settings.BrowserSettings.ActiveSourceMode);
+        Assert.Equal(5000, state.Settings.BrowserSettings.SourceSwitchCooldownMs);
+        Assert.Equal(30, state.Settings.BrowserSettings.StaleSessionAfterSeconds);
+        Assert.Equal(["browser", "youtubeMusic"], state.Settings.BrowserSettings.SourcePriority);
+        Assert.False(state.Settings.BrowserSettings.AllowGenericPlayback);
+        Assert.False(state.Settings.BrowserSettings.PreferTidalOverBrowser);
+        Assert.False(state.Settings.BrowserSettings.MetadataCleanupEnabled);
+        Assert.False(state.Settings.BrowserSettings.BrowserArtworkEnabled);
+        Assert.False(state.Settings.BrowserSettings.YouTubeVideoImageFallbackEnabled);
+        Assert.True(state.Settings.BrowserSettings.DebugLoggingEnabled);
+        Assert.False(state.Settings.BrowserSettings.IgnorePausedSessions);
+        Assert.False(state.Settings.BrowserSettings.IgnoreStaleSessions);
+        Assert.True(state.Settings.BrowserSettings.SupportedBrowsers.OperaEnabled);
+    }
+
+    [Fact]
     public async Task RunDetectionAsync_ResetsState_WhenDetectionThrows()
     {
         using var harness = new BridgeServiceHarness();
@@ -206,6 +257,33 @@ public sealed class BridgeServiceBehaviorTests
         Assert.Empty(harness.Service.GetArtwork());
         Assert.Equal("not_running", nowPlayingFile.Status);
         Assert.Equal("TIDAL", nowPlayingFile.Source);
+    }
+
+    [Fact]
+    public async Task RunDetectionAsync_HoldsPreviousPlayingTrack_DuringShortSessionLoss()
+    {
+        using var harness = new BridgeServiceHarness();
+        harness.PlaybackDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Browser Artist",
+            Title = "Browser Track",
+            Source = "YouTube",
+            Provider = "browser",
+            Browser = "firefox",
+            Site = "youtube",
+            Method = "media_session",
+            Confidence = 0.75
+        });
+        harness.PlaybackDetector.Results.Enqueue(null);
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        await harness.Service.RunDetectionAsync(CancellationToken.None);
+        var state = await harness.Service.RunDetectionAsync(CancellationToken.None);
+
+        Assert.Equal("playing", state.NowPlaying.Status);
+        Assert.Equal("Browser Track", state.NowPlaying.Title);
+        Assert.Equal("selected: cooldown active after session loss", state.NowPlaying.SelectionReason);
     }
 
     [Fact]
@@ -343,7 +421,7 @@ public sealed class BridgeServiceBehaviorTests
         public Queue<DetectionResult?> Results { get; } = [];
         public Exception? Exception { get; set; }
 
-        public Task<DetectionResult?> DetectAsync(CancellationToken cancellationToken)
+        public Task<PlaybackDetectionOutcome> DetectAsync(DetectionResult previous, Settings settings, CancellationToken cancellationToken)
         {
             if (Exception is not null)
             {
@@ -352,11 +430,11 @@ public sealed class BridgeServiceBehaviorTests
 
             if (Results.Count == 0)
             {
-                return Task.FromResult<DetectionResult?>(null);
+                return Task.FromResult(new PlaybackDetectionOutcome(null, new BrowserDebugState()));
             }
 
             var result = Results.Dequeue();
-            return Task.FromResult(result is null ? null : BridgeStatePolicy.CloneDetection(result));
+            return Task.FromResult(new PlaybackDetectionOutcome(result is null ? null : BridgeStatePolicy.CloneDetection(result), new BrowserDebugState()));
         }
     }
 

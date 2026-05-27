@@ -212,6 +212,105 @@ public sealed class MediaSessionDetectorTests
     }
 
     [Fact]
+    public async Task DetectAsync_PreferTidalOverBrowser_SelectsTidalEvenWhenPriorityListOmitsIt()
+    {
+        var settings = new Settings
+        {
+            BrowserSettings = new BrowserSettings
+            {
+                PreferTidalOverBrowser = true,
+                SourcePriority = ["browser", "youtubeMusic", "youtube", "genericBrowser"]
+            }
+        };
+        var detector = CreateDetector([
+            new MediaSessionSnapshot(
+                SessionId: "browser-1",
+                SourceAppId: "chrome.exe youtube",
+                Browser: "chrome",
+                Site: "",
+                IsPaused: false,
+                Title: "Artist - Browser Track",
+                Artist: "",
+                Album: "",
+                DurationMs: 0,
+                LastUpdatedUtc: DateTimeOffset.UtcNow,
+                ArtworkBytes: []),
+            new MediaSessionSnapshot(
+                SessionId: "tidal-1",
+                SourceAppId: "TIDAL.exe",
+                Browser: "",
+                Site: "",
+                IsPaused: false,
+                Title: "Tidal Track",
+                Artist: "Tidal Artist",
+                Album: "",
+                DurationMs: 0,
+                LastUpdatedUtc: DateTimeOffset.UtcNow.AddSeconds(-1),
+                ArtworkBytes: [])
+        ]);
+
+        var result = await detector.DetectAsync(new DetectionResult(), settings, CancellationToken.None);
+
+        Assert.NotNull(result.Result);
+        Assert.Equal("tidal", result.Result!.Provider);
+        Assert.Equal("Tidal Track", result.Result.Title);
+    }
+
+    [Fact]
+    public async Task DetectAsync_PreferTidalOverBrowser_BypassesCooldownWhenTidalIsPlaying()
+    {
+        var settings = new Settings
+        {
+            BrowserSettings = new BrowserSettings
+            {
+                PreferTidalOverBrowser = true,
+                SourceSwitchCooldownMs = 5000
+            }
+        };
+        var previous = new DetectionResult
+        {
+            Status = "playing",
+            Provider = "browser",
+            Browser = "chrome",
+            Site = "youtube",
+            Title = "Browser Track",
+            Artist = "Browser Artist"
+        };
+        var detector = CreateDetector([
+            new MediaSessionSnapshot(
+                SessionId: "browser-session",
+                SourceAppId: "chrome.exe youtube",
+                Browser: "chrome",
+                Site: "",
+                IsPaused: false,
+                Title: "Browser Artist - Browser Track",
+                Artist: "",
+                Album: "",
+                DurationMs: 0,
+                LastUpdatedUtc: DateTimeOffset.UtcNow.AddSeconds(-1),
+                ArtworkBytes: []),
+            new MediaSessionSnapshot(
+                SessionId: "tidal-session",
+                SourceAppId: "TIDAL.exe",
+                Browser: "",
+                Site: "",
+                IsPaused: false,
+                Title: "Tidal Track",
+                Artist: "Tidal Artist",
+                Album: "",
+                DurationMs: 0,
+                LastUpdatedUtc: DateTimeOffset.UtcNow,
+                ArtworkBytes: [])
+        ]);
+
+        var result = await detector.DetectAsync(previous, settings, CancellationToken.None);
+
+        Assert.NotNull(result.Result);
+        Assert.Equal("tidal", result.Result!.Provider);
+        Assert.Equal("Tidal Track", result.Result.Title);
+    }
+
+    [Fact]
     public async Task DetectAsync_ReportsIgnoredReasons_ForPausedStaleAndLowerPrioritySessions()
     {
         var settings = new Settings

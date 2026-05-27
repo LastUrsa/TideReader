@@ -57,7 +57,7 @@ public sealed class MediaSessionDetector(
             .ToList();
 
         var selected = ordered.FirstOrDefault();
-        if (selected is not null && CooldownApplies(previous, selected.Result, browserSettings.SourceSwitchCooldownMs, candidates))
+        if (selected is not null && CooldownApplies(previous, selected.Result, browserSettings, candidates))
         {
             var sticky = candidates.FirstOrDefault(candidate => SameSource(candidate.Result, previous) && candidate.IsPlaying);
             if (sticky is not null)
@@ -152,8 +152,14 @@ public sealed class MediaSessionDetector(
         };
     }
 
-    private static bool CooldownApplies(DetectionResult previous, DetectionResult selected, int cooldownMs, List<PlaybackCandidate> candidates)
+    private static bool CooldownApplies(DetectionResult previous, DetectionResult selected, BrowserSettings settings, List<PlaybackCandidate> candidates)
     {
+        if (ShouldPreferTidalImmediately(previous, selected, settings))
+        {
+            return false;
+        }
+
+        var cooldownMs = settings.SourceSwitchCooldownMs;
         if (cooldownMs <= 0 || previous.Status != "playing" || SameSource(previous, selected))
         {
             return false;
@@ -167,6 +173,11 @@ public sealed class MediaSessionDetector(
 
         return (DateTimeOffset.UtcNow - previousCandidate.LastUpdatedUtc).TotalMilliseconds < cooldownMs;
     }
+
+    private static bool ShouldPreferTidalImmediately(DetectionResult previous, DetectionResult selected, BrowserSettings settings) =>
+        settings.PreferTidalOverBrowser &&
+        string.Equals(previous.Provider, "browser", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(selected.Provider, "tidal", StringComparison.OrdinalIgnoreCase);
 
     private static bool MatchesPrevious(PlaybackCandidate candidate, DetectionResult previous) => SameSource(candidate.Result, previous);
 
@@ -264,6 +275,11 @@ public sealed class TidalPlaybackProvider : IPlaybackProvider
 
     private static int ResolvePriority(string site, BrowserSettings settings)
     {
+        if (settings.PreferTidalOverBrowser)
+        {
+            return int.MinValue;
+        }
+
         var priorityKey = site == "generic" ? "genericBrowser" : site;
         var priorities = settings.SourcePriority ?? [];
         for (var index = 0; index < priorities.Count; index++)

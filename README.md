@@ -11,7 +11,7 @@ Windows desktop app for detecting the current TIDAL track and publishing OBS-fri
 ### Overlay Styling
 
 <a href="docs/images/readme/settings-overlay.png">
-  <img src="docs/images/readme/settings-overlay.png" alt="TideReader overlay styling settings" width="420" />
+  <img src="docs/images/readme/settings-overlay.png" alt="TideReader overlay styling settings" width="320" />
 </a>
 
 ## Stack

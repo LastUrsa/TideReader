@@ -67,6 +67,7 @@ public sealed class BridgeStatePolicyTests
             Artist = "Artist",
             Title = "Track",
             Method = "media_session",
+            Provider = "tidal",
             ArtworkPath = "cover.jpg",
             ArtworkBytes = [1, 2, 3]
         };
@@ -75,6 +76,25 @@ public sealed class BridgeStatePolicyTests
 
         Assert.Equal("", result.ArtworkPath);
         Assert.Empty(result.ArtworkBytes);
+    }
+
+    [Fact]
+    public void SuppressArtworkUntilAlbumResolved_PreservesBrowserArtwork_WhenAlbumMissing()
+    {
+        var current = new DetectionResult
+        {
+            Artist = "Artist",
+            Title = "Track",
+            Method = "media_session",
+            Provider = "browser",
+            ArtworkPath = "cover.jpg",
+            ArtworkBytes = [1, 2, 3]
+        };
+
+        var result = BridgeStatePolicy.SuppressArtworkUntilAlbumResolved(current, MetadataProviderMode.MusicBrainzWithFallbacks);
+
+        Assert.Equal("cover.jpg", result.ArtworkPath);
+        Assert.Equal([1, 2, 3], result.ArtworkBytes);
     }
 
     [Fact]

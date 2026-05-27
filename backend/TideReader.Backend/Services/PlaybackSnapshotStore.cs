@@ -21,7 +21,10 @@ public sealed class PlaybackSnapshotStore : IPlaybackSnapshotStore
                 DurationMs = state.DurationMs,
                 ArtworkPath = state.ArtworkPath,
                 Source = state.Source,
-                Confidence = state.Confidence
+                Confidence = state.Confidence,
+                Provider = state.Provider,
+                Browser = state.Browser,
+                Site = state.Site
             };
             _artwork = state.ArtworkBytes.ToArray();
         }
@@ -40,7 +43,10 @@ public sealed class PlaybackSnapshotStore : IPlaybackSnapshotStore
                 DurationMs = _nowPlaying.DurationMs,
                 ArtworkPath = _nowPlaying.ArtworkPath,
                 Source = _nowPlaying.Source,
-                Confidence = _nowPlaying.Confidence
+                Confidence = _nowPlaying.Confidence,
+                Provider = _nowPlaying.Provider,
+                Browser = _nowPlaying.Browser,
+                Site = _nowPlaying.Site
             };
         }
     }

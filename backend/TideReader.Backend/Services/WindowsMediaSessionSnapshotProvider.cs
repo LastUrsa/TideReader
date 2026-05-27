@@ -5,31 +5,41 @@ namespace TideReader.Backend.Services;
 
 public sealed class WindowsMediaSessionSnapshotProvider : IMediaSessionSnapshotProvider
 {
-    public async Task<MediaSessionSnapshot?> GetCurrentAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<MediaSessionSnapshot>> GetCurrentAsync(CancellationToken cancellationToken)
     {
         var manager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync().AsTask(cancellationToken);
-        var session = manager.GetSessions()
-            .FirstOrDefault(s => (s.SourceAppUserModelId ?? "").Contains("TIDAL", StringComparison.OrdinalIgnoreCase)
-                              || (s.SourceAppUserModelId ?? "").Contains("Aspiro", StringComparison.OrdinalIgnoreCase));
+        var results = new List<MediaSessionSnapshot>();
 
-        if (session is null)
+        foreach (var session in manager.GetSessions())
         {
-            return null;
+            try
+            {
+                var playback = session.GetPlaybackInfo();
+                var timeline = session.GetTimelineProperties();
+                var media = await session.TryGetMediaPropertiesAsync().AsTask(cancellationToken);
+                var artworkBytes = await ReadThumbnailAsync(media.Thumbnail, cancellationToken);
+                var sourceAppId = session.SourceAppUserModelId ?? "";
+
+                results.Add(new MediaSessionSnapshot(
+                    SessionId: BuildSessionId(sourceAppId, media.Title, media.Artist, timeline.LastUpdatedTime),
+                    SourceAppId: sourceAppId,
+                    Browser: DetectBrowser(sourceAppId),
+                    Site: "",
+                    IsPaused: playback.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Paused,
+                    Title: media.Title ?? "",
+                    Artist: media.Artist ?? "",
+                    Album: media.AlbumTitle ?? "",
+                    DurationMs: (long)timeline.EndTime.TotalMilliseconds,
+                    LastUpdatedUtc: timeline.LastUpdatedTime,
+                    ArtworkBytes: artworkBytes));
+            }
+            catch
+            {
+                // Ignore malformed or inaccessible sessions and keep detection running.
+            }
         }
 
-        var playback = session.GetPlaybackInfo();
-        var timeline = session.GetTimelineProperties();
-        var media = await session.TryGetMediaPropertiesAsync().AsTask(cancellationToken);
-        var artworkBytes = await ReadThumbnailAsync(media.Thumbnail, cancellationToken);
-
-        return new MediaSessionSnapshot(
-            SourceAppId: session.SourceAppUserModelId ?? "",
-            IsPaused: playback.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Paused,
-            Title: media.Title ?? "",
-            Artist: media.Artist ?? "",
-            Album: media.AlbumTitle ?? "",
-            DurationMs: (long)timeline.EndTime.TotalMilliseconds,
-            ArtworkBytes: artworkBytes);
+        return results;
     }
 
     private static async Task<byte[]> ReadThumbnailAsync(IRandomAccessStreamReference? thumbnail, CancellationToken cancellationToken)
@@ -53,5 +63,55 @@ public sealed class WindowsMediaSessionSnapshotProvider : IMediaSessionSnapshotP
         {
             return [];
         }
+    }
+
+    private static string BuildSessionId(string sourceAppId, string? title, string? artist, DateTimeOffset lastUpdatedUtc) =>
+        $"{sourceAppId}|{title}|{artist}|{lastUpdatedUtc.UtcTicks}";
+
+    private static string DetectBrowser(string sourceAppId)
+    {
+        if (sourceAppId.Contains("msedge", StringComparison.OrdinalIgnoreCase))
+        {
+            return "edge";
+        }
+
+        if (sourceAppId.Contains("firefox", StringComparison.OrdinalIgnoreCase))
+        {
+            return "firefox";
+        }
+
+        if (sourceAppId.Contains("brave", StringComparison.OrdinalIgnoreCase))
+        {
+            return "brave";
+        }
+
+        if (sourceAppId.Contains("opera", StringComparison.OrdinalIgnoreCase))
+        {
+            return "opera";
+        }
+
+        if (sourceAppId.Contains("chrome", StringComparison.OrdinalIgnoreCase))
+        {
+            return "chrome";
+        }
+
+        if (LooksLikeFirefoxAppId(sourceAppId))
+        {
+            return "firefox";
+        }
+
+        return "";
+    }
+
+    private static bool LooksLikeFirefoxAppId(string sourceAppId)
+    {
+        if (sourceAppId.Length != 16)
+        {
+            return false;
+        }
+
+        return sourceAppId.All(static character =>
+            (character >= '0' && character <= '9') ||
+            (character >= 'A' && character <= 'F'));
     }
 }

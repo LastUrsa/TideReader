@@ -29,6 +29,8 @@ public sealed class BridgeService
     private string _statusMessage = "Waiting for TIDAL";
     private MetadataProviderMode _metadataProviderMode = MetadataProviderMode.MusicBrainzWithFallbacks;
     private long _artworkRevision = 1;
+    private BrowserDebugState _browserDebug = new();
+    private DateTimeOffset? _lastPlayingDetectedUtc;
 
     public event Action<Settings>? SettingsChanged;
 
@@ -74,7 +76,8 @@ public sealed class BridgeService
                 LastError = _lastError,
                 ManualInput = _manualInput,
                 StartupReady = true,
-                StatusMessage = _statusMessage
+                StatusMessage = _statusMessage,
+                BrowserDebug = CloneBrowserDebugState(_browserDebug)
             };
         }
     }
@@ -152,6 +155,10 @@ public sealed class BridgeService
                 _snapshotStore.Update(result);
                 _statusMessage = Describe(result);
                 _lastError = "";
+                if (result.Status == "playing")
+                {
+                    _lastPlayingDetectedUtc = DateTimeOffset.UtcNow;
+                }
                 if (changed)
                 {
                         var trackKey = BridgeStatePolicy.TrackKey(result);
@@ -175,9 +182,11 @@ public sealed class BridgeService
                 {
                     _artworkRevision++;
                 }
-                _state = new DetectionResult { Status = "not_running", Source = "TIDAL", Method = "none", Confidence = 0 };
+                _state = new DetectionResult { Status = "not_running", Source = "TIDAL", Method = "none", Confidence = 0, Provider = "tidal" };
                 _snapshotStore.Update(_state);
                 _statusMessage = "TIDAL not running";
+                _browserDebug = new BrowserDebugState();
+                _lastPlayingDetectedUtc = null;
             }
             _logger.Info($"poll error: {ex.Message}");
         }
@@ -206,7 +215,10 @@ public sealed class BridgeService
                 DurationMs = _state.DurationMs,
                 ArtworkPath = _state.ArtworkPath,
                 Source = _state.Source,
-                Confidence = _state.Confidence
+                Confidence = _state.Confidence,
+                Provider = _state.Provider,
+                Browser = _state.Browser,
+                Site = _state.Site
             };
         }
     }
@@ -221,23 +233,36 @@ public sealed class BridgeService
 
     private async Task<DetectionResult> DetectAsync(CancellationToken cancellationToken)
     {
-        var result = await _mediaSessionDetector.DetectAsync(cancellationToken);
-        if (result is not null)
-        {
-            return result;
-        }
-
         Settings settings;
         string manualInput;
+        DetectionResult previous;
         lock (_lock)
         {
             settings = CloneSettings(_settings);
             manualInput = _manualInput;
+            previous = BridgeStatePolicy.CloneDetection(_state);
+        }
+
+        var playback = await _mediaSessionDetector.DetectAsync(previous, settings, cancellationToken);
+        lock (_lock)
+        {
+            _browserDebug = CloneBrowserDebugState(playback.BrowserDebug);
+        }
+
+        if (playback.Result is not null)
+        {
+            return playback.Result;
+        }
+
+        var heldPrevious = TryHoldPreviousPlayback(previous, settings);
+        if (heldPrevious is not null)
+        {
+            return heldPrevious;
         }
 
         if (settings.EnableWindowTitleFallback)
         {
-            result = _windowTitleDetector.Detect();
+            var result = _windowTitleDetector.Detect();
             if (result is not null)
             {
                 return result;
@@ -246,7 +271,7 @@ public sealed class BridgeService
 
         if (settings.EnableDebugManualInput)
         {
-            result = _manualDetector.Detect(manualInput);
+            var result = _manualDetector.Detect(manualInput);
             if (result is not null)
             {
                 return result;
@@ -258,8 +283,38 @@ public sealed class BridgeService
             Status = "not_running",
             Source = "TIDAL",
             Method = "none",
-            Confidence = 0
+            Confidence = 0,
+            Provider = settings.BrowserSettings.ActiveSourceMode.Equals("browser", StringComparison.OrdinalIgnoreCase) ? "browser" : "tidal"
         };
+    }
+
+    private DetectionResult? TryHoldPreviousPlayback(DetectionResult previous, Settings settings)
+    {
+        if (previous.Status != "playing")
+        {
+            return null;
+        }
+
+        var cooldownMs = settings.BrowserSettings.SourceSwitchCooldownMs;
+        if (cooldownMs <= 0)
+        {
+            return null;
+        }
+
+        DateTimeOffset? lastPlayingDetectedUtc;
+        lock (_lock)
+        {
+            lastPlayingDetectedUtc = _lastPlayingDetectedUtc;
+        }
+
+        if (lastPlayingDetectedUtc is null || (DateTimeOffset.UtcNow - lastPlayingDetectedUtc.Value).TotalMilliseconds > cooldownMs)
+        {
+            return null;
+        }
+
+        var held = BridgeStatePolicy.CloneDetection(previous);
+        held.SelectionReason = "selected: cooldown active after session loss";
+        return held;
     }
 
     private DetectionResult ApplyCache(DetectionResult current)
@@ -397,8 +452,8 @@ public sealed class BridgeService
         {
             "playing" when !string.IsNullOrWhiteSpace(result.Artist) && !string.IsNullOrWhiteSpace(result.Title) => $"Playing {result.Artist} - {result.Title}",
             "playing" when !string.IsNullOrWhiteSpace(result.Title) => $"Playing {result.Title}",
-            "paused" => "TIDAL paused",
-            _ => "TIDAL not running"
+            "paused" => $"{result.Source} paused",
+            _ => result.Provider == "browser" ? "Browser not running" : "TIDAL not running"
         };
 
     private static Settings CloneSettings(Settings settings) => new()
@@ -413,7 +468,8 @@ public sealed class BridgeService
         LaunchAtStartup = settings.LaunchAtStartup,
         MetadataProviderMode = settings.MetadataProviderMode,
         ThemeMode = settings.ThemeMode,
-        OverlaySettings = CloneOverlaySettings(settings.OverlaySettings)
+        OverlaySettings = CloneOverlaySettings(settings.OverlaySettings),
+        BrowserSettings = CloneBrowserSettings(settings.BrowserSettings)
     };
 
     private DetectionResult GetCurrentStateSnapshot()
@@ -459,6 +515,7 @@ public sealed class BridgeService
         }
 
         NormalizeOverlaySettings(settings);
+        NormalizeBrowserSettings(settings);
     }
 
     private async Task ConfigureOverlayAsync(CancellationToken cancellationToken)
@@ -489,7 +546,58 @@ public sealed class BridgeService
         ImagePosition = settings.ImagePosition,
         TextAlign = settings.TextAlign,
         ShowAppName = settings.ShowAppName,
-        ShowPlaybackState = settings.ShowPlaybackState
+        ShowPlaybackState = settings.ShowPlaybackState,
+        ShowPlaybackProvider = settings.ShowPlaybackProvider
+    };
+
+    private static BrowserSettings CloneBrowserSettings(BrowserSettings settings) => new()
+    {
+        Enabled = settings.Enabled,
+        ActiveSourceMode = settings.ActiveSourceMode,
+        SupportedBrowsers = new BrowserSupportSettings
+        {
+            ChromeEnabled = settings.SupportedBrowsers.ChromeEnabled,
+            EdgeEnabled = settings.SupportedBrowsers.EdgeEnabled,
+            FirefoxEnabled = settings.SupportedBrowsers.FirefoxEnabled,
+            BraveEnabled = settings.SupportedBrowsers.BraveEnabled,
+            OperaEnabled = settings.SupportedBrowsers.OperaEnabled
+        },
+        SourcePriority = settings.SourcePriority.ToList(),
+        SourceSwitchCooldownMs = settings.SourceSwitchCooldownMs,
+        AllowGenericPlayback = settings.AllowGenericPlayback,
+        PreferTidalOverBrowser = settings.PreferTidalOverBrowser,
+        MetadataCleanupEnabled = settings.MetadataCleanupEnabled,
+        BrowserArtworkEnabled = settings.BrowserArtworkEnabled,
+        YouTubeVideoImageFallbackEnabled = settings.YouTubeVideoImageFallbackEnabled,
+        DebugLoggingEnabled = settings.DebugLoggingEnabled,
+        IgnorePausedSessions = settings.IgnorePausedSessions,
+        IgnoreStaleSessions = settings.IgnoreStaleSessions,
+        StaleSessionAfterSeconds = settings.StaleSessionAfterSeconds,
+        ShowRawBrowserMetadata = settings.ShowRawBrowserMetadata
+    };
+
+    private static BrowserDebugState CloneBrowserDebugState(BrowserDebugState state) => new()
+    {
+        Sessions = state.Sessions.Select(session => new BrowserSessionDebugInfo
+        {
+            Provider = session.Provider,
+            Browser = session.Browser,
+            Site = session.Site,
+            PlaybackState = session.PlaybackState,
+            SourceAppId = session.SourceAppId,
+            RawTitle = session.RawTitle,
+            RawArtist = session.RawArtist,
+            RawAlbum = session.RawAlbum,
+            ParsedTitle = session.ParsedTitle,
+            ParsedArtist = session.ParsedArtist,
+            ParsedAlbum = session.ParsedAlbum,
+            Confidence = session.Confidence,
+            HasArtwork = session.HasArtwork,
+            IsSelected = session.IsSelected,
+            DecisionReason = session.DecisionReason,
+            SessionId = session.SessionId,
+            LastUpdatedUtc = session.LastUpdatedUtc
+        }).ToList()
     };
 
     private static OverlayTextStyle CloneOverlayTextStyle(OverlayTextStyle style) => new()
@@ -567,6 +675,47 @@ public sealed class BridgeService
             settings.OverlaySettings.TextAlign,
             defaults.TextAlign,
             ["Left", "Center", "Right"]);
+    }
+
+    private static void NormalizeBrowserSettings(Settings settings)
+    {
+        settings.BrowserSettings ??= new BrowserSettings();
+        settings.BrowserSettings.SupportedBrowsers ??= new BrowserSupportSettings();
+        settings.BrowserSettings.ActiveSourceMode = settings.BrowserSettings.ActiveSourceMode?.Trim().ToLowerInvariant() switch
+        {
+            "tidal" => "tidal",
+            "browser" => "browser",
+            _ => "auto"
+        };
+
+        if (settings.BrowserSettings.SourceSwitchCooldownMs < 0)
+        {
+            settings.BrowserSettings.SourceSwitchCooldownMs = 5000;
+        }
+
+        if (settings.BrowserSettings.StaleSessionAfterSeconds <= 0)
+        {
+            settings.BrowserSettings.StaleSessionAfterSeconds = 30;
+        }
+
+        settings.BrowserSettings.SourcePriority = settings.BrowserSettings.SourcePriority?
+            .Where(priority => !string.IsNullOrWhiteSpace(priority))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList()
+            ?? [];
+
+        if (settings.BrowserSettings.SourcePriority.Count == 0)
+        {
+            settings.BrowserSettings.SourcePriority =
+            [
+                "tidal",
+                "youtubeMusic",
+                "bandcamp",
+                "soundcloud",
+                "youtube",
+                "genericBrowser"
+            ];
+        }
     }
 
     private static void NormalizeOverlayTextStyle(OverlayTextStyle style, OverlayTextStyle defaults)

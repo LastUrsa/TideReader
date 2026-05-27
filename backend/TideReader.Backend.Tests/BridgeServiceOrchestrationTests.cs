@@ -164,8 +164,8 @@ public sealed class BridgeServiceOrchestrationTests
 
     private sealed class FakePlaybackDetector(DetectionResult result) : IPlaybackDetector
     {
-        public Task<DetectionResult?> DetectAsync(CancellationToken cancellationToken) =>
-            Task.FromResult<DetectionResult?>(BridgeStatePolicy.CloneDetection(result));
+        public Task<PlaybackDetectionOutcome> DetectAsync(DetectionResult previous, Settings settings, CancellationToken cancellationToken) =>
+            Task.FromResult(new PlaybackDetectionOutcome(BridgeStatePolicy.CloneDetection(result), new BrowserDebugState()));
     }
 
     private sealed class FakeWindowTitleDetector : IWindowTitleDetector

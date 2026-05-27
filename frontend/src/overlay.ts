@@ -93,6 +93,7 @@ export const defaultOverlaySettings: OverlaySettings = {
   textAlign: 'Left',
   showAppName: true,
   showPlaybackState: true,
+  showPlaybackProvider: false,
 };
 
 export const sampleNowPlaying: DetectionResult = {
@@ -107,6 +108,13 @@ export const sampleNowPlaying: DetectionResult = {
   confidence: 0,
   detectedText: '',
   metadataSource: '',
+  provider: 'tidal',
+  browser: '',
+  site: '',
+  rawTitle: '',
+  rawArtist: '',
+  rawAlbum: '',
+  selectionReason: '',
 };
 
 export function createDefaultSettings(): Settings {
@@ -122,6 +130,29 @@ export function createDefaultSettings(): Settings {
     metadataProviderMode: 'MusicBrainzWithFallbacks',
     themeMode: 'Dark',
     overlaySettings: cloneOverlaySettings(defaultOverlaySettings),
+    browserSettings: {
+      enabled: true,
+      activeSourceMode: 'auto',
+      supportedBrowsers: {
+        chromeEnabled: true,
+        edgeEnabled: true,
+        firefoxEnabled: true,
+        braveEnabled: true,
+        operaEnabled: false,
+      },
+      sourcePriority: ['tidal', 'youtubeMusic', 'bandcamp', 'soundcloud', 'youtube', 'genericBrowser'],
+      sourceSwitchCooldownMs: 5000,
+      allowGenericPlayback: true,
+      preferTidalOverBrowser: true,
+      metadataCleanupEnabled: true,
+      browserArtworkEnabled: true,
+      youTubeVideoImageFallbackEnabled: true,
+      debugLoggingEnabled: false,
+      ignorePausedSessions: true,
+      ignoreStaleSessions: true,
+      staleSessionAfterSeconds: 30,
+      showRawBrowserMetadata: false,
+    },
   };
 }
 
@@ -247,6 +278,74 @@ export function truncateOverlayText(value: string, maxCharacters: number, fallba
 export function formatPlaybackStatus(status: string): string {
   const normalized = String(status || 'not_running').replaceAll('_', ' ');
   return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+}
+
+function getBrowserSourceLabel(nowPlaying: DetectionResult): string {
+  const source = nowPlaying.source.trim();
+  if (source) {
+    return source;
+  }
+
+  switch (nowPlaying.site) {
+    case 'youtubeMusic':
+      return 'YouTube Music';
+    case 'youtube':
+      return 'YouTube';
+    case 'bandcamp':
+      return 'Bandcamp';
+    case 'soundcloud':
+      return 'SoundCloud';
+    default:
+      return 'Browser';
+  }
+}
+
+export function isMetadataLimitedBrowserSession(nowPlaying: DetectionResult): boolean {
+  return nowPlaying.provider === 'browser'
+    && nowPlaying.site === 'bandcamp'
+    && nowPlaying.title.trim().length > 0
+    && !nowPlaying.album.trim();
+}
+
+export function getArtistDisplayText(nowPlaying: DetectionResult, fallback: string): string {
+  if (nowPlaying.artist.trim()) {
+    return nowPlaying.artist;
+  }
+
+  if (nowPlaying.provider === 'browser' && nowPlaying.title.trim()) {
+    return getBrowserSourceLabel(nowPlaying);
+  }
+
+  return fallback;
+}
+
+export function getAlbumDisplayText(nowPlaying: DetectionResult, fallback: string): string {
+  if (nowPlaying.album.trim()) {
+    return nowPlaying.album;
+  }
+
+  if (nowPlaying.provider === 'browser' && nowPlaying.title.trim()) {
+    if (isMetadataLimitedBrowserSession(nowPlaying)) {
+      return 'Metadata limited';
+    }
+
+    switch (nowPlaying.site) {
+      case 'youtubeMusic':
+        return 'Music playback';
+      case 'youtube':
+        return 'Video playback';
+      case 'soundcloud':
+        return 'Stream playback';
+      default:
+        return 'Browser playback';
+    }
+  }
+
+  return fallback;
+}
+
+export function shouldHideArtworkFallback(nowPlaying: DetectionResult): boolean {
+  return isMetadataLimitedBrowserSession(nowPlaying);
 }
 
 export function withAlpha(hexColor: string, opacity: number): string {

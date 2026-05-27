@@ -15,21 +15,27 @@ public interface IOutputWriter
 
 public interface IPlaybackDetector
 {
-    Task<DetectionResult?> DetectAsync(CancellationToken cancellationToken);
+    Task<PlaybackDetectionOutcome> DetectAsync(DetectionResult previous, Settings settings, CancellationToken cancellationToken);
 }
 
 public sealed record MediaSessionSnapshot(
+    string SessionId,
     string SourceAppId,
+    string Browser,
+    string Site,
     bool IsPaused,
     string Title,
     string Artist,
     string Album,
     long DurationMs,
+    DateTimeOffset LastUpdatedUtc,
     byte[] ArtworkBytes);
+
+public sealed record PlaybackDetectionOutcome(DetectionResult? Result, BrowserDebugState BrowserDebug);
 
 public interface IMediaSessionSnapshotProvider
 {
-    Task<MediaSessionSnapshot?> GetCurrentAsync(CancellationToken cancellationToken);
+    Task<IReadOnlyList<MediaSessionSnapshot>> GetCurrentAsync(CancellationToken cancellationToken);
 }
 
 public interface IWindowTitleDetector

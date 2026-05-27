@@ -72,6 +72,8 @@ public static class BackendHost
         services.AddSingleton<OutputWriter>();
         services.AddSingleton<IOutputWriter>(sp => sp.GetRequiredService<OutputWriter>());
         services.AddSingleton<IMediaSessionSnapshotProvider, WindowsMediaSessionSnapshotProvider>();
+        services.AddSingleton<IPlaybackProvider, TidalPlaybackProvider>();
+        services.AddSingleton<IPlaybackProvider, BrowserMediaProvider>();
         services.AddSingleton<MediaSessionDetector>();
         services.AddSingleton<IPlaybackDetector>(sp => sp.GetRequiredService<MediaSessionDetector>());
         services.AddSingleton<WindowTitleDetector>();

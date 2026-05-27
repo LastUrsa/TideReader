@@ -214,7 +214,7 @@ internal static class OverlayResponseBuilder
           <div class="brand" id="brand">TideReader</div>
           <div class="status-pill not_running" id="status">Not running</div>
         </div>
-        <div class="title" id="title">Waiting for TIDAL</div>
+        <div class="title" id="title">Waiting for playback</div>
         <div class="artist" id="artist">Artist unavailable</div>
         <div class="album" id="album">Album unavailable</div>
       </div>
@@ -373,6 +373,68 @@ internal static class OverlayResponseBuilder
         return next.slice(0, limit) + '...';
       }
 
+      function getAlbumDisplayText(data, fallback) {
+        const album = String(data.album || '').trim();
+        if (album) {
+          return album;
+        }
+
+        if (String(data.provider || '') === 'browser' && String(data.title || '').trim()) {
+          if (isMetadataLimitedBrowserSession(data)) {
+            return 'Metadata limited';
+          }
+
+          switch (String(data.site || '')) {
+            case 'youtubeMusic':
+              return 'Music playback';
+            case 'youtube':
+              return 'Video playback';
+            case 'soundcloud':
+              return 'Stream playback';
+            default:
+              return 'Browser playback';
+          }
+        }
+
+        return fallback;
+      }
+
+      function getArtistDisplayText(data, fallback) {
+        const artist = String(data.artist || '').trim();
+        if (artist) {
+          return artist;
+        }
+
+        if (String(data.provider || '') === 'browser' && String(data.title || '').trim()) {
+          const source = String(data.source || '').trim();
+          if (source) {
+            return source;
+          }
+
+          switch (String(data.site || '')) {
+            case 'youtubeMusic':
+              return 'YouTube Music';
+            case 'youtube':
+              return 'YouTube';
+            case 'bandcamp':
+              return 'Bandcamp';
+            case 'soundcloud':
+              return 'SoundCloud';
+            default:
+              return 'Browser';
+          }
+        }
+
+        return fallback;
+      }
+
+      function isMetadataLimitedBrowserSession(data) {
+        return String(data.provider || '') === 'browser'
+          && String(data.site || '') === 'bandcamp'
+          && String(data.title || '').trim().length > 0
+          && String(data.album || '').trim().length === 0;
+      }
+
       function mergeSettings(settings) {
         const next = settings || {};
         return {
@@ -455,20 +517,30 @@ internal static class OverlayResponseBuilder
         const statusEl = document.getElementById('status');
         statusEl.textContent = formatStatus(status);
         statusEl.className = 'status-pill ' + status;
-        document.getElementById('title').textContent = truncateText(data.title, activeSettings.songTextStyle.maxCharacters, 'Waiting for TIDAL');
-        document.getElementById('artist').textContent = truncateText(data.artist, activeSettings.artistTextStyle.maxCharacters, 'Artist unavailable');
-        document.getElementById('album').textContent = truncateText(data.album, activeSettings.albumTextStyle.maxCharacters, 'Album unavailable');
+        document.getElementById('title').textContent = truncateText(data.title, activeSettings.songTextStyle.maxCharacters, 'Waiting for playback');
+        document.getElementById('artist').textContent = truncateText(getArtistDisplayText(data, 'Artist unavailable'), activeSettings.artistTextStyle.maxCharacters, 'Artist unavailable');
+        document.getElementById('album').textContent = truncateText(getAlbumDisplayText(data, 'Album unavailable'), activeSettings.albumTextStyle.maxCharacters, 'Album unavailable');
 
         const cover = document.getElementById('cover');
         const coverShell = document.getElementById('cover-shell');
         const placeholder = document.getElementById('cover-placeholder');
         if (data.artworkPath) {
           cover.src = '/cover.jpg?ts=' + Date.now();
+          cover.style.display = '';
           coverShell.classList.add('has-artwork');
+          coverShell.style.display = '';
+          placeholder.style.display = 'none';
+        } else if (isMetadataLimitedBrowserSession(data)) {
+          cover.removeAttribute('src');
+          cover.style.display = 'none';
+          coverShell.classList.remove('has-artwork');
+          coverShell.style.display = 'none';
           placeholder.style.display = 'none';
         } else {
           cover.removeAttribute('src');
+          cover.style.display = '';
           coverShell.classList.remove('has-artwork');
+          coverShell.style.display = '';
           placeholder.style.display = '';
         }
       }

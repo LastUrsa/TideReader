@@ -24,6 +24,10 @@ import {
   textAlignToCss,
   truncateOverlayText,
   withAlpha,
+  getArtistDisplayText,
+  getAlbumDisplayText,
+  isMetadataLimitedBrowserSession,
+  shouldHideArtworkFallback,
 } from './overlay';
 
 function createOverlaySettings(overrides?: Partial<OverlaySettings>): OverlaySettings {
@@ -46,6 +50,13 @@ function createNowPlaying(overrides?: Partial<DetectionResult>): DetectionResult
     confidence: 0,
     detectedText: '',
     metadataSource: '',
+    provider: 'tidal',
+    browser: '',
+    site: '',
+    rawTitle: '',
+    rawArtist: '',
+    rawAlbum: '',
+    selectionReason: '',
     ...overrides,
   };
 }
@@ -136,6 +147,29 @@ describe('overlay helpers', () => {
         ...createOverlaySettings(),
         imageSizePx: 0,
       },
+      browserSettings: {
+        enabled: true,
+        activeSourceMode: 'auto' as const,
+        supportedBrowsers: {
+          chromeEnabled: true,
+          edgeEnabled: true,
+          firefoxEnabled: true,
+          braveEnabled: true,
+          operaEnabled: false,
+        },
+        sourcePriority: ['tidal', 'youtubeMusic', 'bandcamp', 'soundcloud', 'youtube', 'genericBrowser'],
+        sourceSwitchCooldownMs: 5000,
+        allowGenericPlayback: true,
+        preferTidalOverBrowser: true,
+        metadataCleanupEnabled: true,
+        browserArtworkEnabled: true,
+        youTubeVideoImageFallbackEnabled: true,
+        debugLoggingEnabled: false,
+        ignorePausedSessions: true,
+        ignoreStaleSessions: true,
+        staleSessionAfterSeconds: 30,
+        showRawBrowserMetadata: false,
+      },
     };
 
     expect(overlaySettingsHaveErrors(badSettings)).toBe(true);
@@ -179,6 +213,42 @@ describe('overlay helpers', () => {
     expect(fallbackPreset).toContain('135deg');
   });
 
+  it('builds the remaining gradient presets', () => {
+    const reverseDiagonal = getOverlayContainerBackground({
+      ...defaultOverlaySettings.overlayContainerStyle,
+      backgroundMode: 'gradient',
+      gradient: {
+        ...defaultOverlaySettings.overlayContainerStyle.gradient,
+        colorCount: 2,
+        preset: 'Reverse Diagonal',
+      },
+    });
+    expect(reverseDiagonal).toContain('linear-gradient(45deg');
+
+    const spotlight = getOverlayContainerBackground({
+      ...defaultOverlaySettings.overlayContainerStyle,
+      backgroundMode: 'gradient',
+      gradient: {
+        ...defaultOverlaySettings.overlayContainerStyle.gradient,
+        colorCount: 3,
+        preset: 'Spotlight',
+      },
+    });
+    expect(spotlight).toContain('circle at top left');
+    expect(spotlight).toContain('45%');
+
+    const subtleGlass = getOverlayContainerBackground({
+      ...defaultOverlaySettings.overlayContainerStyle,
+      backgroundMode: 'gradient',
+      gradient: {
+        ...defaultOverlaySettings.overlayContainerStyle.gradient,
+        colorCount: 2,
+        preset: 'Subtle Glass',
+      },
+    });
+    expect(subtleGlass).toContain('linear-gradient(135deg');
+  });
+
   it('returns the allowed preset subsets for two and three colors', () => {
     expect(getGradientPresetOptions(2)).toEqual([
       'Linear Left to Right',
@@ -190,6 +260,84 @@ describe('overlay helpers', () => {
     ]);
     expect(getGradientPresetOptions(3)).toContain('Stream Neon');
     expect(getGradientPresetOptions(3)).toContain('Subtle Glass');
+  });
+
+  it('uses browser-aware artist and album fallback labels', () => {
+    const browserNowPlaying = createNowPlaying({
+      provider: 'browser',
+      source: 'Bandcamp',
+      site: 'bandcamp',
+      title: 'lastursa collection',
+      artist: '',
+      album: '',
+    });
+
+    expect(getArtistDisplayText(browserNowPlaying, 'Artist unavailable')).toBe('Bandcamp');
+    expect(getAlbumDisplayText(browserNowPlaying, 'Album unavailable')).toBe('Metadata limited');
+    expect(isMetadataLimitedBrowserSession(browserNowPlaying)).toBe(true);
+    expect(shouldHideArtworkFallback(browserNowPlaying)).toBe(true);
+  });
+
+  it('handles the remaining browser label branches', () => {
+    expect(getArtistDisplayText(createNowPlaying({
+      provider: 'browser',
+      source: '',
+      site: 'youtubeMusic',
+      title: 'Track',
+      artist: '',
+    }), 'Artist unavailable')).toBe('YouTube Music');
+    expect(getArtistDisplayText(createNowPlaying({
+      provider: 'browser',
+      source: '',
+      site: 'youtube',
+      title: 'Track',
+      artist: '',
+    }), 'Artist unavailable')).toBe('YouTube');
+    expect(getArtistDisplayText(createNowPlaying({
+      provider: 'browser',
+      source: '',
+      site: 'soundcloud',
+      title: 'Track',
+      artist: '',
+    }), 'Artist unavailable')).toBe('SoundCloud');
+    expect(getArtistDisplayText(createNowPlaying({
+      provider: 'browser',
+      source: '',
+      site: 'generic',
+      title: 'Track',
+      artist: '',
+    }), 'Artist unavailable')).toBe('Browser');
+
+    expect(getAlbumDisplayText(createNowPlaying({
+      provider: 'browser',
+      site: 'youtubeMusic',
+      title: 'Track',
+      album: '',
+    }), 'Album unavailable')).toBe('Music playback');
+    expect(getAlbumDisplayText(createNowPlaying({
+      provider: 'browser',
+      site: 'youtube',
+      title: 'Track',
+      album: '',
+    }), 'Album unavailable')).toBe('Video playback');
+    expect(getAlbumDisplayText(createNowPlaying({
+      provider: 'browser',
+      site: 'soundcloud',
+      title: 'Track',
+      album: '',
+    }), 'Album unavailable')).toBe('Stream playback');
+    expect(getAlbumDisplayText(createNowPlaying({
+      provider: 'browser',
+      site: 'bandcamp',
+      title: 'Track',
+      album: 'Album',
+    }), 'Album unavailable')).toBe('Album');
+    expect(shouldHideArtworkFallback(createNowPlaying({
+      provider: 'browser',
+      site: 'youtube',
+      title: 'Track',
+      album: '',
+    }))).toBe(false);
   });
 });
 
@@ -217,6 +365,42 @@ describe('NowPlayingOverlayView', () => {
     expect(screen.getByText('Idle')).toBeInTheDocument();
     expect(screen.queryByText('TideReader')).not.toBeInTheDocument();
     expect(screen.queryByText('Not running')).not.toBeInTheDocument();
+  });
+
+  it('shows browser fallback labels when metadata is missing for generic browser playback', () => {
+    render(
+      <NowPlayingOverlayView
+        overlaySettings={createOverlaySettings()}
+        nowPlaying={createNowPlaying({ provider: 'browser', source: 'Browser', site: 'generic', artist: '', album: '', title: 'Video Title' })}
+        artworkAlt="youtube cover art"
+        fallbackMode="app"
+      />,
+    );
+
+    expect(screen.getAllByText('Browser').length).toBeGreaterThan(0);
+    expect(screen.getByText('Browser playback')).toBeInTheDocument();
+  });
+
+  it('hides the artwork block for metadata-limited browser sessions with no artwork', () => {
+    render(
+      <NowPlayingOverlayView
+        overlaySettings={createOverlaySettings()}
+        nowPlaying={createNowPlaying({
+          provider: 'browser',
+          source: 'Bandcamp',
+          site: 'bandcamp',
+          title: "lastursa's collection | Bandcamp",
+          artist: '',
+          album: '',
+        })}
+        artworkAlt="bandcamp cover art"
+        fallbackMode="app"
+      />,
+    );
+
+    expect(screen.queryByText('Bandcamp')).toBeInTheDocument();
+    expect(screen.queryByText('Metadata limited')).toBeInTheDocument();
+    expect(screen.queryByText('ART')).not.toBeInTheDocument();
   });
 
   it('renders artwork, brand, status, and styled text when live data exists', () => {

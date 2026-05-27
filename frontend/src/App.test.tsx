@@ -110,6 +110,30 @@ function createState(overrides?: Partial<AppState>): AppState {
         textAlign: 'Left',
         showAppName: true,
         showPlaybackState: true,
+        showPlaybackProvider: false,
+      },
+      browserSettings: {
+        enabled: true,
+        activeSourceMode: 'auto',
+        supportedBrowsers: {
+          chromeEnabled: true,
+          edgeEnabled: true,
+          firefoxEnabled: true,
+          braveEnabled: true,
+          operaEnabled: false,
+        },
+        sourcePriority: ['tidal', 'youtubeMusic', 'bandcamp', 'soundcloud', 'youtube', 'genericBrowser'],
+        sourceSwitchCooldownMs: 5000,
+        allowGenericPlayback: true,
+        preferTidalOverBrowser: true,
+        metadataCleanupEnabled: true,
+        browserArtworkEnabled: true,
+        youTubeVideoImageFallbackEnabled: true,
+        debugLoggingEnabled: false,
+        ignorePausedSessions: true,
+        ignoreStaleSessions: true,
+        staleSessionAfterSeconds: 30,
+        showRawBrowserMetadata: false,
       },
     },
     nowPlaying: {
@@ -124,6 +148,13 @@ function createState(overrides?: Partial<AppState>): AppState {
       confidence: 0.94,
       detectedText: 'Sample Artist - Sample Track',
       metadataSource: 'MusicBrainz',
+      provider: 'tidal',
+      browser: '',
+      site: '',
+      rawTitle: 'Sample Track',
+      rawArtist: 'Sample Artist',
+      rawAlbum: 'Sample Album',
+      selectionReason: 'selected: highest priority active source',
     },
     outputFolder: 'C:\\Output',
     appVersion: '0.2.0',
@@ -134,6 +165,9 @@ function createState(overrides?: Partial<AppState>): AppState {
     manualInput: '',
     startupReady: true,
     statusMessage: 'Ready',
+    browserDebug: {
+      sessions: [],
+    },
     ...overrides,
   };
 }
@@ -234,6 +268,28 @@ describe('App', () => {
     expect(screen.getByText('Artist unavailable')).toBeInTheDocument();
     expect(screen.getByText('Album unavailable')).toBeInTheDocument();
     expect(screen.getByText('Idle')).toBeInTheDocument();
+  });
+
+  it('shows browser-aware fallback copy for low-quality browser sessions', async () => {
+    apiMocks.getState.mockResolvedValue(createState({
+      nowPlaying: {
+        ...createState().nowPlaying,
+        provider: 'browser',
+        source: 'Bandcamp',
+        site: 'bandcamp',
+        title: "lastursa's collection | Bandcamp",
+        artist: '',
+        album: '',
+        artworkPath: '',
+      },
+    }));
+
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: "lastursa's collection | Bandcamp" })).toBeInTheDocument();
+    expect(screen.getAllByText('Bandcamp').length).toBeGreaterThan(0);
+    expect(screen.getByText('Metadata limited')).toBeInTheDocument();
+    expect(screen.queryByText('Idle')).not.toBeInTheDocument();
   });
 
   it('opens the output folder from the main panel', async () => {
@@ -459,6 +515,30 @@ describe('App', () => {
     await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith('http://127.0.0.1:17655/overlay'));
   });
 
+  it('copies the overlay url through the execCommand fallback and shows copied state', async () => {
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: vi.fn().mockReturnValue(true),
+    });
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: undefined,
+    });
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Sample Track' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Overlay' }));
+
+    const button = screen.getByRole('button', { name: /http:\/\/127\.0\.0\.1:17655\/overlay/i });
+    fireEvent.click(button);
+    fireEvent.click(button);
+
+    await waitFor(() => expect(document.execCommand).toHaveBeenCalledWith('copy'));
+    expect(screen.getByText('Copied')).toBeInTheDocument();
+  });
+
   it('allows overlay sections to be collapsed and expanded', async () => {
     render(<App />);
 
@@ -474,6 +554,41 @@ describe('App', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Artwork' }));
     expect(screen.getByLabelText('Artwork image size (px)')).toBeInTheDocument();
+  });
+
+  it('collapses the container and status pill sections and toggles song text styling', async () => {
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Sample Track' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Overlay' }));
+
+    expect(screen.getByLabelText('Background mode')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Container' }));
+    expect(screen.queryByLabelText('Background mode')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Container' }));
+    expect(screen.getByLabelText('Background mode')).toBeInTheDocument();
+
+    expect(screen.getByLabelText('Text color')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Status Pill' }));
+    expect(screen.queryByLabelText('Text color')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Status Pill' }));
+    expect(screen.getByLabelText('Text color')).toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByLabelText('Bold')[0]);
+    fireEvent.click(screen.getAllByLabelText('Italic')[0]);
+    fireEvent.click(screen.getAllByLabelText('Underline')[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+
+    await waitFor(() => expect(apiMocks.saveSettings).toHaveBeenCalledWith(expect.objectContaining({
+      overlaySettings: expect.objectContaining({
+        songTextStyle: expect.objectContaining({
+          bold: false,
+          italic: true,
+          underline: true,
+        }),
+      }),
+    })));
   });
 
   it('shows gradient-only controls, filters two-color presets, and resets overlay defaults', async () => {
@@ -697,6 +812,163 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('tab', { name: 'Overlay' }));
 
     expect(screen.getByText('Disabled')).toBeInTheDocument();
+  });
+
+  it('saves browser media settings and shows browser debug details', async () => {
+    apiMocks.getState.mockResolvedValue(createState({
+      browserDebug: {
+        sessions: [{
+          provider: 'browser',
+          browser: 'chrome',
+          site: 'youtube',
+          playbackState: 'playing',
+          sourceAppId: 'chrome.exe youtube',
+          rawTitle: 'Artist - Track',
+          rawArtist: '',
+          rawAlbum: '',
+          parsedTitle: 'Track',
+          parsedArtist: 'Artist',
+          parsedAlbum: '',
+          confidence: 0.75,
+          hasArtwork: false,
+          isSelected: true,
+          decisionReason: 'selected: highest priority active source',
+          sessionId: 'browser-1',
+          lastUpdatedUtc: '2026-05-27T15:00:00Z',
+        }],
+      },
+    }));
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Sample Track' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Browser' }));
+
+    expect(screen.getAllByText('selected: highest priority active source').length).toBeGreaterThan(0);
+    fireEvent.change(screen.getByDisplayValue('5000'), {
+      target: { value: '2500' },
+    });
+    fireEvent.change(screen.getByDisplayValue('30'), {
+      target: { value: '45' },
+    });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Active source mode' }), {
+      target: { value: 'browser' },
+    });
+    fireEvent.click(screen.getByLabelText('Enable browser media support'));
+    fireEvent.click(screen.getByLabelText('Use browser video image when album art is unavailable'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+
+    await waitFor(() => expect(apiMocks.saveSettings).toHaveBeenCalledWith(expect.objectContaining({
+      browserSettings: expect.objectContaining({
+        enabled: false,
+        activeSourceMode: 'browser',
+        sourceSwitchCooldownMs: 2500,
+        staleSessionAfterSeconds: 45,
+        youTubeVideoImageFallbackEnabled: false,
+      }),
+    })));
+  });
+
+  it('shows the empty browser debug state and can reveal raw browser metadata', async () => {
+    apiMocks.getState.mockResolvedValueOnce(createState()).mockResolvedValue(createState({
+      browserDebug: {
+        sessions: [{
+          provider: 'browser',
+          browser: 'firefox',
+          site: 'generic',
+          playbackState: 'playing',
+          sourceAppId: '308046B0AF4A39CB',
+          rawTitle: 'Artist - Track',
+          rawArtist: '',
+          rawAlbum: '',
+          parsedTitle: 'Track',
+          parsedArtist: 'Artist',
+          parsedAlbum: '',
+          confidence: 0.72,
+          hasArtwork: false,
+          isSelected: false,
+          decisionReason: 'ignored: not selected',
+          sessionId: 'browser-raw',
+          lastUpdatedUtc: '2026-05-27T15:00:00Z',
+        }],
+      },
+    }));
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Sample Track' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Browser' }));
+
+    expect(screen.getByText('No browser sessions detected yet.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('Show raw browser metadata'));
+
+    await waitFor(() => expect(screen.getByText(/Raw: n\/a \| Artist - Track \| n\/a/)).toBeInTheDocument());
+  });
+
+  it('saves the remaining browser toggle controls', async () => {
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Sample Track' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Browser' }));
+
+    fireEvent.click(screen.getByLabelText('Chrome'));
+    fireEvent.click(screen.getByLabelText('Edge'));
+    fireEvent.click(screen.getByLabelText('Firefox'));
+    fireEvent.click(screen.getByLabelText('Brave'));
+    fireEvent.click(screen.getByLabelText('Opera'));
+    fireEvent.click(screen.getByLabelText('Prefer TIDAL over browser playback'));
+    fireEvent.click(screen.getByLabelText('Allow generic browser playback'));
+    fireEvent.click(screen.getByLabelText('Enable metadata cleanup/parsing'));
+    fireEvent.click(screen.getByLabelText('Enable browser artwork retrieval'));
+    fireEvent.click(screen.getByLabelText('Ignore paused sessions'));
+    fireEvent.click(screen.getByLabelText('Ignore stale sessions'));
+    fireEvent.click(screen.getByLabelText('Enable browser detection logging'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+
+    await waitFor(() => expect(apiMocks.saveSettings).toHaveBeenCalledWith(expect.objectContaining({
+      browserSettings: expect.objectContaining({
+        supportedBrowsers: expect.objectContaining({
+          chromeEnabled: false,
+          edgeEnabled: false,
+          firefoxEnabled: false,
+          braveEnabled: false,
+          operaEnabled: true,
+        }),
+        preferTidalOverBrowser: false,
+        allowGenericPlayback: false,
+        metadataCleanupEnabled: false,
+        browserArtworkEnabled: false,
+        ignorePausedSessions: false,
+        ignoreStaleSessions: false,
+        debugLoggingEnabled: true,
+      }),
+    })));
+  });
+
+  it('uses the sample preview when no live playback is available', async () => {
+    apiMocks.getState.mockResolvedValue(createState({
+      nowPlaying: {
+        ...createState().nowPlaying,
+        title: '',
+        artist: '',
+        album: '',
+        artworkPath: '',
+      },
+    }));
+
+    render(<App />);
+
+    await screen.findByText('Waiting for playback');
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Overlay' }));
+
+    expect(screen.getByText('Sample Song')).toBeInTheDocument();
+    expect(screen.getByText('Sample Artist')).toBeInTheDocument();
+    expect(screen.getByText('Sample Album')).toBeInTheDocument();
   });
 
   it('falls back to text when the artwork image fails to load', async () => {

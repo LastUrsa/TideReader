@@ -949,10 +949,11 @@ describe('App', () => {
     })));
   });
 
-  it('uses the sample preview when no live playback is available', async () => {
+  it('uses the idle preview when no live playback is available', async () => {
     apiMocks.getState.mockResolvedValue(createState({
       nowPlaying: {
         ...createState().nowPlaying,
+        status: 'not_running',
         title: '',
         artist: '',
         album: '',
@@ -966,9 +967,10 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
     fireEvent.click(screen.getByRole('tab', { name: 'Overlay' }));
 
-    expect(screen.getByText('Sample Song')).toBeInTheDocument();
-    expect(screen.getByText('Sample Artist')).toBeInTheDocument();
-    expect(screen.getByText('Sample Album')).toBeInTheDocument();
+    expect(screen.getAllByText('Waiting for playback').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Artist unavailable').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Album unavailable').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Not running').length).toBeGreaterThan(0);
   });
 
   it('falls back to text when the artwork image fails to load', async () => {

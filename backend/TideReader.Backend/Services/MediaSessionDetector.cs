@@ -19,6 +19,7 @@ public sealed record PlaybackCandidate(
 
 public sealed class MediaSessionDetector(
     IMediaSessionSnapshotProvider snapshotProvider,
+    IAudioSessionSnapshotProvider audioSessionSnapshotProvider,
     IEnumerable<IPlaybackProvider> providers) : IPlaybackDetector
 {
     private readonly IReadOnlyList<IPlaybackProvider> _providers = providers.ToArray();
@@ -26,11 +27,61 @@ public sealed class MediaSessionDetector(
     public async Task<PlaybackDetectionOutcome> DetectAsync(DetectionResult previous, Settings settings, CancellationToken cancellationToken)
     {
         var sessions = await snapshotProvider.GetCurrentAsync(cancellationToken);
+        var audioResult = await audioSessionSnapshotProvider.GetCurrentAsync(cancellationToken);
+        var audioSessions = audioResult.Sessions;
         var candidates = _providers
             .SelectMany(provider => provider.GetCandidates(sessions, settings))
             .ToList();
 
         var result = SelectCandidate(candidates, previous, settings, out var debugState);
+        debugState.RawSessions = sessions
+            .Select(session => new RawMediaSessionDebugInfo
+            {
+                SessionId = session.SessionId,
+                SourceAppId = session.SourceAppId,
+                Browser = session.Browser,
+                IsPlaying = session.IsPlaying,
+                IsPaused = session.IsPaused,
+                Title = session.Title,
+                Artist = session.Artist,
+                Album = session.Album,
+                LastUpdatedUtc = session.LastUpdatedUtc
+            })
+            .OrderBy(session => session.SourceAppId)
+            .ThenBy(session => session.Title)
+            .ToList();
+        debugState.AudioEndpoints = audioResult.Endpoints
+            .Select(endpoint => new RawAudioEndpointDebugInfo
+            {
+                EndpointId = endpoint.EndpointId,
+                FriendlyName = endpoint.FriendlyName,
+                DeviceState = endpoint.DeviceState,
+                IsDefaultMultimedia = endpoint.IsDefaultMultimedia
+            })
+            .OrderByDescending(endpoint => endpoint.IsDefaultMultimedia)
+            .ThenBy(endpoint => endpoint.FriendlyName)
+            .ToList();
+        debugState.AudioSessions = audioSessions
+            .Select(session => new RawAudioSessionDebugInfo
+            {
+                SessionId = session.SessionId,
+                EndpointId = session.EndpointId,
+                ProcessId = session.ProcessId,
+                ProcessName = session.ProcessName,
+                DisplayName = session.DisplayName,
+                IconPath = session.IconPath,
+                SessionIdentifier = session.SessionIdentifier,
+                SessionInstanceIdentifier = session.SessionInstanceIdentifier,
+                State = session.State,
+                IsSystemSoundsSession = session.IsSystemSoundsSession,
+                IsMuted = session.IsMuted,
+                PeakLevel = session.PeakLevel,
+                CapturedAtUtc = session.CapturedAtUtc
+            })
+            .OrderByDescending(session => session.PeakLevel)
+            .ThenBy(session => session.ProcessName)
+            .ThenBy(session => session.ProcessId)
+            .ToList();
         return new PlaybackDetectionOutcome(result, debugState);
     }
 
@@ -212,9 +263,11 @@ public sealed class TidalPlaybackProvider : IPlaybackProvider
     private static PlaybackCandidate CreateCandidate(MediaSessionSnapshot snapshot, Settings settings)
     {
         var browserSettings = settings.BrowserSettings ?? new BrowserSettings();
+        var isPlaying = IsActiveTidalPlayback(snapshot, browserSettings);
+        var isStale = IsStale(snapshot, browserSettings);
         var result = new DetectionResult
         {
-            Status = snapshot.IsPlaying ? "playing" : snapshot.IsPaused ? "paused" : "not_running",
+            Status = isPlaying ? "playing" : snapshot.IsPaused ? "paused" : "not_running",
             Title = snapshot.Title,
             Artist = snapshot.Artist,
             Album = snapshot.Album,
@@ -253,9 +306,9 @@ public sealed class TidalPlaybackProvider : IPlaybackProvider
                 LastUpdatedUtc = snapshot.LastUpdatedUtc
             },
             Priority: ResolvePriority("tidal", browserSettings),
-            IsPlaying: snapshot.IsPlaying,
+            IsPlaying: isPlaying,
             IsPaused: snapshot.IsPaused,
-            IsStale: IsStale(snapshot, browserSettings),
+            IsStale: isStale,
             LastUpdatedUtc: snapshot.LastUpdatedUtc);
     }
 
@@ -279,6 +332,27 @@ public sealed class TidalPlaybackProvider : IPlaybackProvider
     private static bool IsStale(MediaSessionSnapshot snapshot, BrowserSettings settings) =>
         !snapshot.IsPlaying &&
         (DateTimeOffset.UtcNow - snapshot.LastUpdatedUtc).TotalSeconds > settings.StaleSessionAfterSeconds;
+
+    private static bool IsActiveTidalPlayback(MediaSessionSnapshot snapshot, BrowserSettings settings)
+    {
+        if (snapshot.IsPlaying)
+        {
+            return true;
+        }
+
+        if (snapshot.IsPaused)
+        {
+            return false;
+        }
+
+        var hasStructuredMetadata =
+            !string.IsNullOrWhiteSpace(snapshot.Title) ||
+            !string.IsNullOrWhiteSpace(snapshot.Artist) ||
+            !string.IsNullOrWhiteSpace(snapshot.Album);
+
+        return hasStructuredMetadata &&
+            (DateTimeOffset.UtcNow - snapshot.LastUpdatedUtc).TotalSeconds <= settings.StaleSessionAfterSeconds;
+    }
 
     private static int ResolvePriority(string site, BrowserSettings settings)
     {
@@ -325,9 +399,11 @@ public sealed class BrowserMediaProvider : IPlaybackProvider
         var normalized = BrowserMetadataParser.Normalize(snapshot, settings.MetadataCleanupEnabled);
         var artworkBytes = ResolveBrowserArtwork(snapshot, normalized, settings);
         var sourceLabel = GetSourceLabel(normalized.Site);
+        var isPlaying = IsActiveBrowserPlayback(snapshot, settings, normalized);
+        var isStale = IsStale(snapshot, settings);
         var result = new DetectionResult
         {
-            Status = snapshot.IsPlaying ? "playing" : snapshot.IsPaused ? "paused" : "not_running",
+            Status = isPlaying ? "playing" : snapshot.IsPaused ? "paused" : "not_running",
             Title = normalized.Title,
             Artist = normalized.Artist,
             Album = normalized.Album,
@@ -370,9 +446,9 @@ public sealed class BrowserMediaProvider : IPlaybackProvider
                 LastUpdatedUtc = snapshot.LastUpdatedUtc
             },
             Priority: ResolvePriority(normalized.Site, settings),
-            IsPlaying: snapshot.IsPlaying,
+            IsPlaying: isPlaying,
             IsPaused: snapshot.IsPaused,
-            IsStale: IsStale(snapshot, settings),
+            IsStale: isStale,
             LastUpdatedUtc: snapshot.LastUpdatedUtc);
     }
 
@@ -406,6 +482,27 @@ public sealed class BrowserMediaProvider : IPlaybackProvider
     private static bool IsStale(MediaSessionSnapshot snapshot, BrowserSettings settings) =>
         !snapshot.IsPlaying &&
         (DateTimeOffset.UtcNow - snapshot.LastUpdatedUtc).TotalSeconds > settings.StaleSessionAfterSeconds;
+
+    private static bool IsActiveBrowserPlayback(MediaSessionSnapshot snapshot, BrowserSettings settings, BrowserMetadataNormalization normalized)
+    {
+        if (snapshot.IsPlaying)
+        {
+            return true;
+        }
+
+        if (snapshot.IsPaused)
+        {
+            return false;
+        }
+
+        var hasStructuredMetadata =
+            !string.IsNullOrWhiteSpace(normalized.Title) ||
+            !string.IsNullOrWhiteSpace(normalized.Artist) ||
+            !string.IsNullOrWhiteSpace(normalized.Album);
+
+        return hasStructuredMetadata &&
+            (DateTimeOffset.UtcNow - snapshot.LastUpdatedUtc).TotalSeconds <= settings.StaleSessionAfterSeconds;
+    }
 
     private static string GetSourceLabel(string site) => site switch
     {

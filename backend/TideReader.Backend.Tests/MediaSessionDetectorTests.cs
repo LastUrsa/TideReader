@@ -92,6 +92,87 @@ public sealed class MediaSessionDetectorTests
     }
 
     [Fact]
+    public async Task DetectAsync_IncludesAudioSessionDebugSnapshots()
+    {
+        var detector = CreateDetector(
+        [
+            new MediaSessionSnapshot(
+                SessionId: "browser-1",
+                SourceAppId: "chrome.exe youtube",
+                Browser: "chrome",
+                Site: "",
+                IsPlaying: true,
+                IsPaused: false,
+                Title: "Artist - Song Title",
+                Artist: "",
+                Album: "",
+                DurationMs: 0,
+                LastUpdatedUtc: DateTimeOffset.UtcNow,
+                ArtworkBytes: [])
+        ],
+        [
+            new AudioSessionSnapshot(
+                SessionId: "123|chrome|YouTube|instance",
+                EndpointId: "endpoint-1",
+                ProcessId: 123,
+                ProcessName: "chrome",
+                DisplayName: "YouTube",
+                IconPath: "",
+                SessionIdentifier: "session",
+                SessionInstanceIdentifier: "instance",
+                State: "active",
+                IsSystemSoundsSession: false,
+                IsMuted: false,
+                PeakLevel: 0.42f,
+                CapturedAtUtc: DateTimeOffset.UtcNow)
+        ]);
+
+        var result = await detector.DetectAsync(new DetectionResult(), new Settings(), CancellationToken.None);
+
+        Assert.Contains(result.BrowserDebug.AudioSessions, session => session.ProcessName == "chrome" && session.PeakLevel == 0.42f);
+    }
+
+    [Fact]
+    public async Task DetectAsync_TreatsFreshBrowserSessionWithMetadataAsPlaying_WhenWindowsStatusIsNotExplicitlyPlaying()
+    {
+        var detector = CreateDetector([
+            new MediaSessionSnapshot(
+                SessionId: "browser-1",
+                SourceAppId: "chrome.exe youtube",
+                Browser: "chrome",
+                Site: "",
+                IsPlaying: false,
+                IsPaused: false,
+                Title: "Artist - Song Title (Official Video)",
+                Artist: "",
+                Album: "",
+                DurationMs: 0,
+                LastUpdatedUtc: DateTimeOffset.UtcNow,
+                ArtworkBytes: []),
+            new MediaSessionSnapshot(
+                SessionId: "tidal-1",
+                SourceAppId: "TIDAL.exe",
+                Browser: "",
+                Site: "",
+                IsPlaying: false,
+                IsPaused: true,
+                Title: "Paused Track",
+                Artist: "Paused Artist",
+                Album: "",
+                DurationMs: 0,
+                LastUpdatedUtc: DateTimeOffset.UtcNow.AddSeconds(-1),
+                ArtworkBytes: [])
+        ]);
+
+        var result = await detector.DetectAsync(new DetectionResult(), new Settings(), CancellationToken.None);
+
+        Assert.NotNull(result.Result);
+        Assert.Equal("browser", result.Result!.Provider);
+        Assert.Equal("playing", result.Result.Status);
+        Assert.Equal("Song Title", result.Result.Title);
+    }
+
+    [Fact]
     public async Task DetectAsync_ParsesBandcampTitlePipeFormat()
     {
         var detector = CreateDetector([
@@ -323,6 +404,53 @@ public sealed class MediaSessionDetectorTests
     }
 
     [Fact]
+    public async Task DetectAsync_PreferTidalOverBrowser_SelectsFreshTidalSession_WhenWindowsStatusIsNotExplicitlyPlaying()
+    {
+        var settings = new Settings
+        {
+            BrowserSettings = new BrowserSettings
+            {
+                PreferTidalOverBrowser = true
+            }
+        };
+        var detector = CreateDetector([
+            new MediaSessionSnapshot(
+                SessionId: "browser-session",
+                SourceAppId: "chrome.exe youtube",
+                Browser: "chrome",
+                Site: "",
+                IsPlaying: true,
+                IsPaused: false,
+                Title: "Browser Artist - Browser Track",
+                Artist: "",
+                Album: "",
+                DurationMs: 0,
+                LastUpdatedUtc: DateTimeOffset.UtcNow.AddSeconds(-1),
+                ArtworkBytes: []),
+            new MediaSessionSnapshot(
+                SessionId: "tidal-fresh-session",
+                SourceAppId: "TIDAL.exe",
+                Browser: "",
+                Site: "",
+                IsPlaying: false,
+                IsPaused: false,
+                Title: "Tidal Track",
+                Artist: "Tidal Artist",
+                Album: "",
+                DurationMs: 0,
+                LastUpdatedUtc: DateTimeOffset.UtcNow,
+                ArtworkBytes: [])
+        ]);
+
+        var result = await detector.DetectAsync(new DetectionResult(), settings, CancellationToken.None);
+
+        Assert.NotNull(result.Result);
+        Assert.Equal("tidal", result.Result!.Provider);
+        Assert.Equal("playing", result.Result.Status);
+        Assert.Equal("Tidal Track", result.Result.Title);
+    }
+
+    [Fact]
     public async Task DetectAsync_IgnoresInactiveBrowserSession_AndSelectsActiveTidal()
     {
         var settings = new Settings
@@ -344,7 +472,7 @@ public sealed class MediaSessionDetectorTests
                 Artist: "",
                 Album: "",
                 DurationMs: 0,
-                LastUpdatedUtc: DateTimeOffset.UtcNow,
+                LastUpdatedUtc: DateTimeOffset.UtcNow.AddMinutes(-2),
                 ArtworkBytes: []),
             new MediaSessionSnapshot(
                 SessionId: "tidal-active",
@@ -365,7 +493,7 @@ public sealed class MediaSessionDetectorTests
 
         Assert.NotNull(result.Result);
         Assert.Equal("tidal", result.Result!.Provider);
-        Assert.Contains(result.BrowserDebug.Sessions, session => session.SessionId == "browser-inactive" && session.DecisionReason == "ignored: inactive session");
+        Assert.Contains(result.BrowserDebug.Sessions, session => session.SessionId == "browser-inactive" && session.DecisionReason == "ignored: stale session");
     }
 
     [Fact]
@@ -404,7 +532,7 @@ public sealed class MediaSessionDetectorTests
                 Artist: "Stopped Artist",
                 Album: "",
                 DurationMs: 0,
-                LastUpdatedUtc: DateTimeOffset.UtcNow,
+                LastUpdatedUtc: DateTimeOffset.UtcNow.AddMinutes(-2),
                 ArtworkBytes: [])
         ]);
 
@@ -652,11 +780,22 @@ public sealed class MediaSessionDetectorTests
         Assert.Empty(result.Result.ArtworkBytes);
     }
 
-    private static MediaSessionDetector CreateDetector(IReadOnlyList<MediaSessionSnapshot> snapshots) =>
-        new(new FakeSnapshotProvider(snapshots), [new TidalPlaybackProvider(), new BrowserMediaProvider()]);
+    private static MediaSessionDetector CreateDetector(
+        IReadOnlyList<MediaSessionSnapshot> snapshots,
+        IReadOnlyList<AudioSessionSnapshot>? audioSnapshots = null) =>
+        new(
+            new FakeSnapshotProvider(snapshots),
+            new FakeAudioSnapshotProvider(audioSnapshots ?? []),
+            [new TidalPlaybackProvider(), new BrowserMediaProvider()]);
 
     private sealed class FakeSnapshotProvider(IReadOnlyList<MediaSessionSnapshot> snapshots) : IMediaSessionSnapshotProvider
     {
         public Task<IReadOnlyList<MediaSessionSnapshot>> GetCurrentAsync(CancellationToken cancellationToken) => Task.FromResult(snapshots);
+    }
+
+    private sealed class FakeAudioSnapshotProvider(IReadOnlyList<AudioSessionSnapshot> snapshots) : IAudioSessionSnapshotProvider
+    {
+        public Task<AudioSessionSnapshotResult> GetCurrentAsync(CancellationToken cancellationToken) =>
+            Task.FromResult(new AudioSessionSnapshotResult([], snapshots));
     }
 }

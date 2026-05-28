@@ -1555,7 +1555,7 @@ public sealed class BridgeServiceBehaviorTests
 
     private sealed class StubAppUpdateChecker : IAppUpdateChecker
     {
-        public string CurrentVersion => "0.3.0";
+        public string CurrentVersion => "0.3.1";
         public string ReleaseUrl => "https://github.com/LastUrsa/TideReader/releases";
         public Task<UpdateInfo> CheckForUpdatesAsync(CancellationToken cancellationToken) => Task.FromResult(new UpdateInfo
         {

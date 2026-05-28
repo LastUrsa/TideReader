@@ -2,7 +2,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
 import './App.css';
 import NowPlayingOverlayView from './NowPlayingOverlayView';
 import { AppState, DetectionResult, GradientSettings, OverlayTextStyle, Settings, UpdateInfo, checkForUpdates as checkForUpdatesApi, chooseOutputFolder as chooseOutputFolderApi, getArtworkUrl, getState, getSystemFonts, openOutputFolder as openOutputFolderApi, openReleasePage as openReleasePageApi, runDetectionNow as runDetectionNowApi, saveSettings as saveSettingsApi } from './api';
-import { cloneOverlaySettings, createDefaultSettings, defaultOverlaySettings, formatPlaybackStatus, getAlbumDisplayText, getArtistDisplayText, getGradientPresetOptions, gradientColorCountOptions, isGradientAngleValid, isOpacityValid, isPositiveNumber, isValidHexColor, isZeroOrPositiveNumber, overlayBackgroundModeOptions, overlaySettingsHaveErrors, overlayTextStyleHasErrors, sampleNowPlaying, shouldHideArtworkFallback } from './overlay';
+import { cloneOverlaySettings, createDefaultSettings, defaultOverlaySettings, formatPlaybackStatus, getAlbumDisplayText, getArtistDisplayText, getGradientPresetOptions, gradientColorCountOptions, isGradientAngleValid, isOpacityValid, isPositiveNumber, isValidHexColor, isZeroOrPositiveNumber, overlayBackgroundModeOptions, overlaySettingsHaveErrors, overlayTextStyleHasErrors, shouldHideArtworkFallback } from './overlay';
 
 type SettingsTab = 'general' | 'browser' | 'overlay';
 
@@ -155,9 +155,7 @@ function App() {
   const hideArtworkFallback = !hasArtwork && shouldHideArtworkFallback(state.nowPlaying);
   const effectiveThemeMode = settingsOpen ? draft.themeMode : state.settings.themeMode;
   const hasOverlayErrors = overlaySettingsHaveErrors(draft);
-  const previewNowPlaying: DetectionResult = state.nowPlaying.title || state.nowPlaying.artist || state.nowPlaying.album || state.nowPlaying.artworkPath
-    ? state.nowPlaying
-    : sampleNowPlaying;
+  const previewNowPlaying: DetectionResult = state.nowPlaying;
   const previewArtworkUrl = state.nowPlaying.artworkPath && !artworkFailed ? artworkUrl : '';
   const gradientPresetOptions = getGradientPresetOptions(draft.overlaySettings.overlayContainerStyle.gradient.colorCount);
 
@@ -580,6 +578,13 @@ function App() {
                       browserSettings: {
                         ...draft.browserSettings,
                         debugLoggingEnabled: value,
+                      },
+                    })} />
+                    <Toggle label="Enable deep diagnostic logging" checked={draft.browserSettings.deepDiagnosticLoggingEnabled} onChange={(value) => setDraft({
+                      ...draft,
+                      browserSettings: {
+                        ...draft.browserSettings,
+                        deepDiagnosticLoggingEnabled: value,
                       },
                     })} />
                     <Toggle label="Show raw browser metadata" checked={draft.browserSettings.showRawBrowserMetadata} onChange={(value) => setDraft({
@@ -1114,8 +1119,8 @@ function App() {
                       overlaySettings={draft.overlaySettings}
                       nowPlaying={previewNowPlaying}
                       artworkUrl={previewArtworkUrl}
-                      artworkAlt={`${previewNowPlaying.title || 'Sample Song'} cover art`}
-                      fallbackMode="preview"
+                      artworkAlt={`${previewNowPlaying.title || 'Waiting for playback'} cover art`}
+                      fallbackMode="app"
                     />
                   </div>
                 </CollapsibleSection>

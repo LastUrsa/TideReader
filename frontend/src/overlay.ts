@@ -148,6 +148,7 @@ export function createDefaultSettings(): Settings {
       browserArtworkEnabled: true,
       youTubeVideoImageFallbackEnabled: true,
       debugLoggingEnabled: false,
+      deepDiagnosticLoggingEnabled: false,
       ignorePausedSessions: true,
       ignoreStaleSessions: true,
       staleSessionAfterSeconds: 30,

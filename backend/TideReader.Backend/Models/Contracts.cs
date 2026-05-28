@@ -143,6 +143,7 @@ public sealed class BrowserSettings
     public bool BrowserArtworkEnabled { get; set; } = true;
     public bool YouTubeVideoImageFallbackEnabled { get; set; } = true;
     public bool DebugLoggingEnabled { get; set; }
+    public bool DeepDiagnosticLoggingEnabled { get; set; }
     public bool IgnorePausedSessions { get; set; } = true;
     public bool IgnoreStaleSessions { get; set; } = true;
     public int StaleSessionAfterSeconds { get; set; } = 30;
@@ -189,6 +190,63 @@ public sealed class BrowserSessionDebugInfo
 public sealed class BrowserDebugState
 {
     public List<BrowserSessionDebugInfo> Sessions { get; set; } = [];
+    public List<RawMediaSessionDebugInfo> RawSessions { get; set; } = [];
+    public List<RawAudioEndpointDebugInfo> AudioEndpoints { get; set; } = [];
+    public List<RawAudioSessionDebugInfo> AudioSessions { get; set; } = [];
+    public List<RawWindowTitleDebugInfo> WindowTitles { get; set; } = [];
+}
+
+public sealed class RawMediaSessionDebugInfo
+{
+    public string SessionId { get; set; } = "";
+    public string SourceAppId { get; set; } = "";
+    public string Browser { get; set; } = "";
+    public bool IsPlaying { get; set; }
+    public bool IsPaused { get; set; }
+    public string Title { get; set; } = "";
+    public string Artist { get; set; } = "";
+    public string Album { get; set; } = "";
+    public DateTimeOffset LastUpdatedUtc { get; set; }
+}
+
+public sealed class RawAudioSessionDebugInfo
+{
+    public string SessionId { get; set; } = "";
+    public string EndpointId { get; set; } = "";
+    public int ProcessId { get; set; }
+    public string ProcessName { get; set; } = "";
+    public string DisplayName { get; set; } = "";
+    public string IconPath { get; set; } = "";
+    public string SessionIdentifier { get; set; } = "";
+    public string SessionInstanceIdentifier { get; set; } = "";
+    public string State { get; set; } = "";
+    public bool IsSystemSoundsSession { get; set; }
+    public bool IsMuted { get; set; }
+    public float PeakLevel { get; set; }
+    public DateTimeOffset CapturedAtUtc { get; set; }
+}
+
+public sealed class RawAudioEndpointDebugInfo
+{
+    public string EndpointId { get; set; } = "";
+    public string FriendlyName { get; set; } = "";
+    public string DeviceState { get; set; } = "";
+    public bool IsDefaultMultimedia { get; set; }
+}
+
+public sealed class RawWindowTitleDebugInfo
+{
+    public string Source { get; set; } = "";
+    public string Provider { get; set; } = "";
+    public string Status { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string Artist { get; set; } = "";
+    public string Method { get; set; } = "";
+    public double Confidence { get; set; }
+    public string DetectedText { get; set; } = "";
+    public string SelectionReason { get; set; } = "";
+    public bool IsActionable { get; set; }
+    public bool HasRecentChange { get; set; }
 }
 
 public sealed class DetectionResult

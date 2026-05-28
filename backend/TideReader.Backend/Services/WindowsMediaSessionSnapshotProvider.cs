@@ -19,13 +19,15 @@ public sealed class WindowsMediaSessionSnapshotProvider : IMediaSessionSnapshotP
                 var media = await session.TryGetMediaPropertiesAsync().AsTask(cancellationToken);
                 var artworkBytes = await ReadThumbnailAsync(media.Thumbnail, cancellationToken);
                 var sourceAppId = session.SourceAppUserModelId ?? "";
+                var playbackStatus = playback.PlaybackStatus;
 
                 results.Add(new MediaSessionSnapshot(
                     SessionId: BuildSessionId(sourceAppId, media.Title, media.Artist, timeline.LastUpdatedTime),
                     SourceAppId: sourceAppId,
                     Browser: DetectBrowser(sourceAppId),
                     Site: "",
-                    IsPaused: playback.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Paused,
+                    IsPlaying: playbackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing,
+                    IsPaused: playbackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Paused,
                     Title: media.Title ?? "",
                     Artist: media.Artist ?? "",
                     Album: media.AlbumTitle ?? "",

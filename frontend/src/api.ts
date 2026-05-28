@@ -79,6 +79,7 @@ export type BrowserSettings = {
   browserArtworkEnabled: boolean;
   youTubeVideoImageFallbackEnabled: boolean;
   debugLoggingEnabled: boolean;
+  deepDiagnosticLoggingEnabled: boolean;
   ignorePausedSessions: boolean;
   ignoreStaleSessions: boolean;
   staleSessionAfterSeconds: number;

@@ -1,4 +1,6 @@
 using TideReader.Backend.Models;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace TideReader.Backend.Services;
@@ -31,6 +33,9 @@ public sealed class BridgeService
     private long _artworkRevision = 1;
     private BrowserDebugState _browserDebug = new();
     private DateTimeOffset? _lastPlayingDetectedUtc;
+    private string _lastWindowTitleTrackKey = "";
+    private DateTimeOffset? _lastWindowTitleChangedUtc;
+    private bool _hasObservedWindowTitle;
 
     public event Action<Settings>? SettingsChanged;
 
@@ -57,7 +62,7 @@ public sealed class BridgeService
         _metadataProviderMode = ParseMetadataProviderMode(_settings.MetadataProviderMode);
         await ConfigureOverlayAsync(cancellationToken);
         SettingsChanged?.Invoke(CloneSettings(_settings));
-        _logger.Info("startup");
+        _logger.Info("startup build=audio-endpoint-debug-v1");
     }
 
     public AppState GetState()
@@ -155,7 +160,7 @@ public sealed class BridgeService
                 _snapshotStore.Update(result);
                 _statusMessage = Describe(result);
                 _lastError = "";
-                if (result.Status == "playing")
+                if (ShouldRefreshLastPlayingDetected(result))
                 {
                     _lastPlayingDetectedUtc = DateTimeOffset.UtcNow;
                 }
@@ -249,9 +254,49 @@ public sealed class BridgeService
             _browserDebug = CloneBrowserDebugState(playback.BrowserDebug);
         }
 
+        var windowTitleResult = settings.EnableWindowTitleFallback ? _windowTitleDetector.Detect() : null;
+        ObserveWindowTitle(windowTitleResult);
+        lock (_lock)
+        {
+            _browserDebug.WindowTitles = BuildWindowTitleDebug(windowTitleResult, settings);
+        }
+        LogBrowserDetectionDebug(settings, GetCurrentBrowserDebugSnapshot());
+
+        var preferredTidalFallback = TryPreferWindowTitleTidal(playback.Result, windowTitleResult, previous, settings);
+        if (preferredTidalFallback is not null)
+        {
+            lock (_lock)
+            {
+                _browserDebug.WindowTitles = BuildWindowTitleDebug(preferredTidalFallback, settings);
+            }
+            return preferredTidalFallback;
+        }
+
+        var heldWindowTitleFallback = TryHoldPreferredWindowTitleTidal(playback.Result, windowTitleResult, previous, settings);
+        if (heldWindowTitleFallback is not null)
+        {
+            lock (_lock)
+            {
+                _browserDebug.WindowTitles = BuildWindowTitleDebug(heldWindowTitleFallback, settings);
+            }
+            return heldWindowTitleFallback;
+        }
+
+        var heldWindowTitleTrack = TryHoldRecentWindowTitleTidalTrack(windowTitleResult, previous, settings);
+        if (heldWindowTitleTrack is not null)
+        {
+            return heldWindowTitleTrack;
+        }
+
         if (playback.Result is not null)
         {
             return playback.Result;
+        }
+
+        var browserStopTransitionFallback = TryUseRecentGenericWindowTitleTidalAfterBrowserStop(playback.Result, windowTitleResult, previous, settings);
+        if (browserStopTransitionFallback is not null)
+        {
+            return browserStopTransitionFallback;
         }
 
         var heldPrevious = TryHoldPreviousPlayback(previous, settings);
@@ -260,13 +305,21 @@ public sealed class BridgeService
             return heldPrevious;
         }
 
-        if (settings.EnableWindowTitleFallback)
+        var hintedTidalMediaSession = TryUseWindowTitleHintedTidalMediaSession(playback.BrowserDebug, windowTitleResult, previous, settings);
+        if (hintedTidalMediaSession is not null)
         {
-            var result = _windowTitleDetector.Detect();
-            if (result is not null)
-            {
-                return result;
-            }
+            return hintedTidalMediaSession;
+        }
+
+        var recentGenericWindowTitleFallback = TryUseRecentGenericWindowTitleTidal(windowTitleResult, previous, settings);
+        if (recentGenericWindowTitleFallback is not null)
+        {
+            return recentGenericWindowTitleFallback;
+        }
+
+        if (windowTitleResult is not null && IsActionableWindowTitleTidal(windowTitleResult))
+        {
+            return windowTitleResult;
         }
 
         if (settings.EnableDebugManualInput)
@@ -288,6 +341,43 @@ public sealed class BridgeService
         };
     }
 
+    private List<RawWindowTitleDebugInfo> BuildWindowTitleDebug(DetectionResult? windowTitleResult, Settings settings)
+    {
+        if (windowTitleResult is null)
+        {
+            return
+            [
+                new RawWindowTitleDebugInfo
+                {
+                    Source = "TIDAL",
+                    Provider = "tidal",
+                    Status = "not_running",
+                    Method = "window_title",
+                    SelectionReason = "window title detector returned null",
+                    HasRecentChange = HasRecentWindowTitleChange(settings)
+                }
+            ];
+        }
+
+        return
+        [
+            new RawWindowTitleDebugInfo
+            {
+                Source = windowTitleResult.Source,
+                Provider = string.IsNullOrWhiteSpace(windowTitleResult.Provider) ? "tidal" : windowTitleResult.Provider,
+                Status = windowTitleResult.Status,
+                Title = windowTitleResult.Title,
+                Artist = windowTitleResult.Artist,
+                Method = windowTitleResult.Method,
+                Confidence = windowTitleResult.Confidence,
+                DetectedText = windowTitleResult.DetectedText,
+                SelectionReason = windowTitleResult.SelectionReason,
+                IsActionable = IsActionableWindowTitleTidal(windowTitleResult),
+                HasRecentChange = HasRecentWindowTitleChange(settings)
+            }
+        ];
+    }
+
     private DetectionResult? TryHoldPreviousPlayback(DetectionResult previous, Settings settings)
     {
         if (previous.Status != "playing")
@@ -295,8 +385,8 @@ public sealed class BridgeService
             return null;
         }
 
-        var cooldownMs = settings.BrowserSettings.SourceSwitchCooldownMs;
-        if (cooldownMs <= 0)
+        var holdMs = GetSessionLossHoldMs(settings);
+        if (holdMs <= 0)
         {
             return null;
         }
@@ -307,7 +397,7 @@ public sealed class BridgeService
             lastPlayingDetectedUtc = _lastPlayingDetectedUtc;
         }
 
-        if (lastPlayingDetectedUtc is null || (DateTimeOffset.UtcNow - lastPlayingDetectedUtc.Value).TotalMilliseconds > cooldownMs)
+        if (lastPlayingDetectedUtc is null || (DateTimeOffset.UtcNow - lastPlayingDetectedUtc.Value).TotalMilliseconds > holdMs)
         {
             return null;
         }
@@ -315,6 +405,434 @@ public sealed class BridgeService
         var held = BridgeStatePolicy.CloneDetection(previous);
         held.SelectionReason = "selected: cooldown active after session loss";
         return held;
+    }
+
+    private DetectionResult? TryUseRecentGenericWindowTitleTidal(DetectionResult? windowTitleResult, DetectionResult previous, Settings settings)
+    {
+        if (windowTitleResult is null ||
+            !IsGenericWindowTitleTidal(windowTitleResult) ||
+            !HasRecentWindowTitleChange(settings))
+        {
+            return null;
+        }
+
+        if (previous.Status == "playing" &&
+            !string.Equals(previous.Provider, "tidal", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        if (string.Equals(previous.Provider, "tidal", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(previous.Method, "window_title", StringComparison.OrdinalIgnoreCase) &&
+            IsActionableWindowTitleTidal(previous))
+        {
+            return null;
+        }
+
+        var provisional = BridgeStatePolicy.CloneDetection(windowTitleResult);
+        provisional.Provider = "tidal";
+        provisional.Source = "TIDAL";
+        provisional.SelectionReason = "selected: recent generic TIDAL window title";
+        return provisional;
+    }
+
+    private DetectionResult? TryUseRecentGenericWindowTitleTidalAfterBrowserStop(
+        DetectionResult? playbackResult,
+        DetectionResult? windowTitleResult,
+        DetectionResult previous,
+        Settings settings)
+    {
+        if (playbackResult is not null ||
+            windowTitleResult is null ||
+            !settings.BrowserSettings.PreferTidalOverBrowser ||
+            !IsGenericWindowTitleTidal(windowTitleResult) ||
+            !string.Equals(previous.Provider, "browser", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(previous.Status, "playing", StringComparison.OrdinalIgnoreCase) ||
+            !HasRecentSourceLoss(settings))
+        {
+            return null;
+        }
+
+        var provisional = BridgeStatePolicy.CloneDetection(windowTitleResult);
+        provisional.Provider = "tidal";
+        provisional.Source = "TIDAL";
+        provisional.SelectionReason = "selected: recent generic TIDAL title after browser stop";
+        return provisional;
+    }
+
+    private DetectionResult? TryUseWindowTitleHintedTidalMediaSession(
+        BrowserDebugState debugState,
+        DetectionResult? windowTitleResult,
+        DetectionResult previous,
+        Settings settings)
+    {
+        if (windowTitleResult is null ||
+            !string.Equals(windowTitleResult.Method, "window_title", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        if (!IsActionableWindowTitleTidal(windowTitleResult) && !IsGenericWindowTitleTidal(windowTitleResult))
+        {
+            return null;
+        }
+
+        if (previous.Status == "playing" &&
+            !string.Equals(previous.Provider, "tidal", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var hintedSession = debugState.Sessions
+            .Where(session => string.Equals(session.Provider, "tidal", StringComparison.OrdinalIgnoreCase))
+            .Where(session => !string.IsNullOrWhiteSpace(session.ParsedTitle) || !string.IsNullOrWhiteSpace(session.ParsedArtist))
+            .OrderByDescending(session => session.LastUpdatedUtc)
+            .ThenByDescending(session => session.Confidence)
+            .FirstOrDefault();
+
+        if (hintedSession is null)
+        {
+            return null;
+        }
+
+        var hinted = new DetectionResult
+        {
+            Status = "playing",
+            Title = hintedSession.ParsedTitle,
+            Artist = hintedSession.ParsedArtist,
+            Album = hintedSession.ParsedAlbum,
+            Source = "TIDAL",
+            Method = "media_session",
+            Confidence = hintedSession.Confidence,
+            DetectedText = $"{hintedSession.ParsedArtist} - {hintedSession.ParsedTitle}".Trim(' ', '-'),
+            SourceAppId = hintedSession.SourceAppId,
+            MatcherReason = "window_title_hint_with_media_session_metadata",
+            Provider = "tidal",
+            RawTitle = hintedSession.RawTitle,
+            RawArtist = hintedSession.RawArtist,
+            RawAlbum = hintedSession.RawAlbum,
+            SelectionReason = IsGenericWindowTitleTidal(windowTitleResult)
+                ? "selected: generic TIDAL title matched paused media session"
+                : "selected: window title matched paused media session"
+        };
+
+        return hinted;
+    }
+
+    private static int GetSessionLossHoldMs(Settings settings)
+    {
+        var cooldownMs = settings.BrowserSettings.SourceSwitchCooldownMs;
+        if (cooldownMs <= 0)
+        {
+            return 0;
+        }
+
+        var onePollWindowMs = Math.Clamp(settings.PollIntervalMs, 250, 1500);
+        return Math.Min(cooldownMs, onePollWindowMs);
+    }
+
+    private DetectionResult? TryPreferWindowTitleTidal(DetectionResult? playbackResult, DetectionResult? windowTitleResult, DetectionResult previous, Settings settings)
+    {
+        if (playbackResult is null ||
+            !settings.BrowserSettings.PreferTidalOverBrowser ||
+            !string.Equals(playbackResult.Provider, "browser", StringComparison.OrdinalIgnoreCase) ||
+            windowTitleResult is null ||
+            !string.Equals(windowTitleResult.Status, "playing", StringComparison.OrdinalIgnoreCase) ||
+            !IsActionableWindowTitleTidal(windowTitleResult))
+        {
+            return null;
+        }
+
+        if (!ShouldPreferWindowTitleOverBrowser(windowTitleResult, previous, settings))
+        {
+            return null;
+        }
+
+        var preferred = BridgeStatePolicy.CloneDetection(windowTitleResult);
+        preferred.Provider = "tidal";
+        preferred.Source = "TIDAL";
+        preferred.SelectionReason = "selected: window title preferred over browser";
+        return preferred;
+    }
+
+    private DetectionResult? TryHoldPreferredWindowTitleTidal(DetectionResult? playbackResult, DetectionResult? windowTitleResult, DetectionResult previous, Settings settings)
+    {
+        if (!settings.BrowserSettings.PreferTidalOverBrowser ||
+            (playbackResult is not null && !string.Equals(playbackResult.Provider, "browser", StringComparison.OrdinalIgnoreCase)) ||
+            windowTitleResult is not null ||
+            !string.Equals(previous.Provider, "tidal", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(previous.Method, "window_title", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(previous.SelectionReason, "selected: window title preferred over browser", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        if (!HasRecentWindowTitleChange(settings))
+        {
+            return null;
+        }
+
+        var held = BridgeStatePolicy.CloneDetection(previous);
+        held.SelectionReason = "selected: holding window title fallback after detection loss";
+        return held;
+    }
+
+    private DetectionResult? TryHoldRecentWindowTitleTidalTrack(DetectionResult? windowTitleResult, DetectionResult previous, Settings settings)
+    {
+        if (!string.Equals(previous.Provider, "tidal", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(previous.Method, "window_title", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(previous.Status, "playing", StringComparison.OrdinalIgnoreCase) ||
+            !IsActionableWindowTitleTidal(previous))
+        {
+            return null;
+        }
+
+        if (!ShouldHoldRecentWindowTitleTidalTrack(windowTitleResult, settings))
+        {
+            return null;
+        }
+
+        var held = BridgeStatePolicy.CloneDetection(previous);
+        held.SelectionReason = "selected: holding recent TIDAL window title track";
+        return held;
+    }
+
+    private bool ShouldPreferWindowTitleOverBrowser(DetectionResult windowTitleResult, DetectionResult previous, Settings settings)
+    {
+        return HasRecentWindowTitleChange(settings) ||
+            ShouldKeepPreferredWindowTitleOverBrowser(windowTitleResult, previous);
+    }
+
+    private bool ShouldHoldRecentWindowTitleTidalTrack(DetectionResult? windowTitleResult, Settings settings)
+    {
+        if (windowTitleResult is null)
+        {
+            return HasRecentWindowTitleDropout(settings);
+        }
+
+        if (IsGenericWindowTitleTidal(windowTitleResult))
+        {
+            return HasRecentWindowTitleChange(settings);
+        }
+
+        return false;
+    }
+
+    private static bool ShouldKeepPreferredWindowTitleOverBrowser(DetectionResult windowTitleResult, DetectionResult previous)
+    {
+        if (!string.Equals(previous.Provider, "tidal", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(previous.Method, "window_title", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return string.Equals(previous.Title, windowTitleResult.Title, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(previous.Artist, windowTitleResult.Artist, StringComparison.OrdinalIgnoreCase) &&
+            IsStickyWindowTitleSelectionReason(previous.SelectionReason);
+    }
+
+    private static bool IsStickyWindowTitleSelectionReason(string? selectionReason) =>
+        string.Equals(selectionReason, "selected: window title preferred over browser", StringComparison.Ordinal) ||
+        string.Equals(selectionReason, "selected: holding window title fallback after detection loss", StringComparison.Ordinal);
+
+    private static bool IsActionableWindowTitleTidal(DetectionResult result)
+    {
+        if (IsGenericWindowTitleTidal(result))
+        {
+            return false;
+        }
+
+        var title = result.Title?.Trim() ?? "";
+        var artist = result.Artist?.Trim() ?? "";
+        return !string.IsNullOrWhiteSpace(title) || !string.IsNullOrWhiteSpace(artist);
+    }
+
+    private static bool IsGenericWindowTitleTidal(DetectionResult result)
+    {
+        var title = result.Title?.Trim() ?? "";
+        var artist = result.Artist?.Trim() ?? "";
+        var detectedText = result.DetectedText?.Trim() ?? "";
+
+        return string.Equals(title, "TIDAL", StringComparison.OrdinalIgnoreCase) &&
+            string.IsNullOrWhiteSpace(artist) &&
+            (string.IsNullOrWhiteSpace(detectedText) || string.Equals(detectedText, "TIDAL", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void ObserveWindowTitle(DetectionResult? windowTitleResult)
+    {
+        var key = windowTitleResult is null ? "" : BridgeStatePolicy.TrackKey(windowTitleResult);
+
+        lock (_lock)
+        {
+            if (!_hasObservedWindowTitle)
+            {
+                _lastWindowTitleTrackKey = key;
+                _lastWindowTitleChangedUtc = null;
+                _hasObservedWindowTitle = true;
+                return;
+            }
+
+            if (string.Equals(_lastWindowTitleTrackKey, key, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _lastWindowTitleTrackKey = key;
+            _lastWindowTitleChangedUtc = DateTimeOffset.UtcNow;
+        }
+    }
+
+    private bool HasRecentWindowTitleChange(Settings settings)
+    {
+        DateTimeOffset? changedUtc;
+        lock (_lock)
+        {
+            changedUtc = _lastWindowTitleChangedUtc;
+        }
+
+        if (changedUtc is null)
+        {
+            return false;
+        }
+
+        var windowMs = Math.Clamp(settings.BrowserSettings.SourceSwitchCooldownMs, 250, 1500);
+        return (DateTimeOffset.UtcNow - changedUtc.Value).TotalMilliseconds <= windowMs;
+    }
+
+    private bool HasRecentWindowTitleDropout(Settings settings)
+    {
+        DateTimeOffset? changedUtc;
+        lock (_lock)
+        {
+            changedUtc = _lastWindowTitleChangedUtc;
+        }
+
+        if (changedUtc is null)
+        {
+            return false;
+        }
+
+        var windowMs = Math.Clamp(settings.BrowserSettings.SourceSwitchCooldownMs, 1000, 3000);
+        return (DateTimeOffset.UtcNow - changedUtc.Value).TotalMilliseconds <= windowMs;
+    }
+
+    private bool HasRecentSourceLoss(Settings settings)
+    {
+        DateTimeOffset? lastPlayingDetectedUtc;
+        lock (_lock)
+        {
+            lastPlayingDetectedUtc = _lastPlayingDetectedUtc;
+        }
+
+        if (lastPlayingDetectedUtc is null)
+        {
+            return false;
+        }
+
+        var windowMs = Math.Clamp(settings.PollIntervalMs * 3, 1000, 3000);
+        return (DateTimeOffset.UtcNow - lastPlayingDetectedUtc.Value).TotalMilliseconds <= windowMs;
+    }
+
+    private static bool ShouldRefreshLastPlayingDetected(DetectionResult result) =>
+        result.Status == "playing" &&
+        !string.Equals(result.SelectionReason, "selected: cooldown active after session loss", StringComparison.Ordinal);
+
+    private void LogBrowserDetectionDebug(Settings settings, BrowserDebugState debugState)
+    {
+        if (!settings.BrowserSettings.DebugLoggingEnabled)
+        {
+            return;
+        }
+
+        var includeFullIdentifiers = settings.BrowserSettings.DeepDiagnosticLoggingEnabled;
+
+        foreach (var session in debugState.RawSessions)
+        {
+            _logger.Info(
+                $"raw-media-session sessionId={FormatIdentifier(session.SessionId, includeFullIdentifiers)} " +
+                $"sourceAppId=\"{FormatIdentifier(session.SourceAppId, includeFullIdentifiers)}\" browser={session.Browser} " +
+                $"isPlaying={session.IsPlaying} isPaused={session.IsPaused} lastUpdatedUtc={session.LastUpdatedUtc:O} " +
+                $"title=\"{session.Title}\" artist=\"{session.Artist}\" album=\"{session.Album}\"");
+        }
+
+        foreach (var endpoint in debugState.AudioEndpoints)
+        {
+            _logger.Info(
+                $"raw-audio-endpoint endpointId=\"{FormatIdentifier(endpoint.EndpointId, includeFullIdentifiers)}\" " +
+                $"friendlyName=\"{FormatSensitiveText(endpoint.FriendlyName, includeFullIdentifiers)}\" " +
+                $"state={endpoint.DeviceState} defaultMultimedia={endpoint.IsDefaultMultimedia}");
+        }
+
+        foreach (var session in debugState.AudioSessions)
+        {
+            _logger.Info(
+                $"raw-audio-session sessionId={FormatIdentifier(session.SessionId, includeFullIdentifiers)} " +
+                $"endpointId=\"{FormatIdentifier(session.EndpointId, includeFullIdentifiers)}\" pid={session.ProcessId} process=\"{session.ProcessName}\" " +
+                $"displayName=\"{FormatSensitiveText(session.DisplayName, includeFullIdentifiers)}\" state={session.State} muted={session.IsMuted} peak={session.PeakLevel:F4} " +
+                $"systemSounds={session.IsSystemSoundsSession} capturedAtUtc={session.CapturedAtUtc:O}");
+        }
+
+        foreach (var windowTitle in debugState.WindowTitles)
+        {
+            _logger.Info(
+                $"raw-window-title provider={windowTitle.Provider} source={windowTitle.Source} status={windowTitle.Status} " +
+                $"title=\"{windowTitle.Title}\" artist=\"{windowTitle.Artist}\" method={windowTitle.Method} " +
+                $"confidence={windowTitle.Confidence:F2} actionable={windowTitle.IsActionable} recentChange={windowTitle.HasRecentChange} " +
+                $"detectedText=\"{windowTitle.DetectedText}\" selectionReason=\"{windowTitle.SelectionReason}\"");
+        }
+
+        foreach (var session in debugState.Sessions)
+        {
+            _logger.Info(
+                $"browser-debug sessionId={FormatIdentifier(session.SessionId, includeFullIdentifiers)} provider={session.Provider} browser={session.Browser} site={session.Site} " +
+                $"state={session.PlaybackState} selected={session.IsSelected} reason=\"{session.DecisionReason}\" " +
+                $"confidence={session.Confidence:F2} sourceAppId=\"{FormatIdentifier(session.SourceAppId, includeFullIdentifiers)}\" " +
+                $"parsedArtist=\"{session.ParsedArtist}\" parsedTitle=\"{session.ParsedTitle}\"");
+        }
+    }
+
+    private static string FormatIdentifier(string? value, bool includeFullValue)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "";
+        }
+
+        if (includeFullValue)
+        {
+            return value;
+        }
+
+        return $"hash:{HashIdentifier(value)}";
+    }
+
+    private static string FormatSensitiveText(string? value, bool includeFullValue)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "";
+        }
+
+        if (includeFullValue)
+        {
+            return value;
+        }
+
+        return $"redacted(hash:{HashIdentifier(value)})";
+    }
+
+    private static string HashIdentifier(string value)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+        return Convert.ToHexString(bytes[..6]).ToLowerInvariant();
+    }
+
+    private BrowserDebugState GetCurrentBrowserDebugSnapshot()
+    {
+        lock (_lock)
+        {
+            return CloneBrowserDebugState(_browserDebug);
+        }
     }
 
     private DetectionResult ApplyCache(DetectionResult current)
@@ -570,6 +1088,7 @@ public sealed class BridgeService
         BrowserArtworkEnabled = settings.BrowserArtworkEnabled,
         YouTubeVideoImageFallbackEnabled = settings.YouTubeVideoImageFallbackEnabled,
         DebugLoggingEnabled = settings.DebugLoggingEnabled,
+        DeepDiagnosticLoggingEnabled = settings.DeepDiagnosticLoggingEnabled,
         IgnorePausedSessions = settings.IgnorePausedSessions,
         IgnoreStaleSessions = settings.IgnoreStaleSessions,
         StaleSessionAfterSeconds = settings.StaleSessionAfterSeconds,
@@ -597,6 +1116,55 @@ public sealed class BridgeService
             DecisionReason = session.DecisionReason,
             SessionId = session.SessionId,
             LastUpdatedUtc = session.LastUpdatedUtc
+        }).ToList(),
+        RawSessions = state.RawSessions.Select(session => new RawMediaSessionDebugInfo
+        {
+            SessionId = session.SessionId,
+            SourceAppId = session.SourceAppId,
+            Browser = session.Browser,
+            IsPlaying = session.IsPlaying,
+            IsPaused = session.IsPaused,
+            Title = session.Title,
+            Artist = session.Artist,
+            Album = session.Album,
+            LastUpdatedUtc = session.LastUpdatedUtc
+        }).ToList(),
+        AudioEndpoints = state.AudioEndpoints.Select(endpoint => new RawAudioEndpointDebugInfo
+        {
+            EndpointId = endpoint.EndpointId,
+            FriendlyName = endpoint.FriendlyName,
+            DeviceState = endpoint.DeviceState,
+            IsDefaultMultimedia = endpoint.IsDefaultMultimedia
+        }).ToList(),
+        AudioSessions = state.AudioSessions.Select(session => new RawAudioSessionDebugInfo
+        {
+            SessionId = session.SessionId,
+            EndpointId = session.EndpointId,
+            ProcessId = session.ProcessId,
+            ProcessName = session.ProcessName,
+            DisplayName = session.DisplayName,
+            IconPath = session.IconPath,
+            SessionIdentifier = session.SessionIdentifier,
+            SessionInstanceIdentifier = session.SessionInstanceIdentifier,
+            State = session.State,
+            IsSystemSoundsSession = session.IsSystemSoundsSession,
+            IsMuted = session.IsMuted,
+            PeakLevel = session.PeakLevel,
+            CapturedAtUtc = session.CapturedAtUtc
+        }).ToList(),
+        WindowTitles = state.WindowTitles.Select(windowTitle => new RawWindowTitleDebugInfo
+        {
+            Source = windowTitle.Source,
+            Provider = windowTitle.Provider,
+            Status = windowTitle.Status,
+            Title = windowTitle.Title,
+            Artist = windowTitle.Artist,
+            Method = windowTitle.Method,
+            Confidence = windowTitle.Confidence,
+            DetectedText = windowTitle.DetectedText,
+            SelectionReason = windowTitle.SelectionReason,
+            IsActionable = windowTitle.IsActionable,
+            HasRecentChange = windowTitle.HasRecentChange
         }).ToList()
     };
 

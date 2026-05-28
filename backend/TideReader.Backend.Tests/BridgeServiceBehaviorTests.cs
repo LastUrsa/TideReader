@@ -28,6 +28,613 @@ public sealed class BridgeServiceBehaviorTests
     }
 
     [Fact]
+    public async Task RunDetectionAsync_IgnoresIdleGenericTidalWindowTitle_WhenNoPlaybackIsActive()
+    {
+        using var harness = new BridgeServiceHarness();
+        harness.Settings.EnableWindowTitleFallback = true;
+        harness.WindowTitleDetector.Result = new DetectionResult
+        {
+            Status = "playing",
+            Artist = "",
+            Title = "TIDAL",
+            Method = "window_title",
+            Confidence = 0.61,
+            DetectedText = "TIDAL"
+        };
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        var state = await harness.Service.RunDetectionAsync(CancellationToken.None);
+
+        Assert.Equal("not_running", state.NowPlaying.Status);
+        Assert.Equal("none", state.NowPlaying.Method);
+        Assert.True(string.IsNullOrWhiteSpace(state.NowPlaying.Title));
+        Assert.True(string.IsNullOrWhiteSpace(state.NowPlaying.Artist));
+    }
+
+    [Fact]
+    public async Task RunDetectionAsync_UsesRecentGenericTidalWindowTitle_WhenPlaybackJustStartedFromIdle()
+    {
+        using var harness = new BridgeServiceHarness();
+        harness.Settings.EnableWindowTitleFallback = true;
+        harness.WindowTitleDetector.Result = null;
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        var baselineState = await harness.Service.RunDetectionAsync(CancellationToken.None);
+
+        harness.WindowTitleDetector.Result = new DetectionResult
+        {
+            Status = "playing",
+            Artist = "",
+            Title = "TIDAL",
+            Method = "window_title",
+            Confidence = 0.61,
+            DetectedText = "TIDAL"
+        };
+
+        var state = await harness.Service.RunDetectionAsync(CancellationToken.None);
+
+        Assert.Equal("not_running", baselineState.NowPlaying.Status);
+        Assert.Equal("playing", state.NowPlaying.Status);
+        Assert.Equal("tidal", state.NowPlaying.Provider);
+        Assert.Equal("TIDAL", state.NowPlaying.Title);
+        Assert.Equal("selected: recent generic TIDAL window title", state.NowPlaying.SelectionReason);
+    }
+
+    [Fact]
+    public async Task RunDetectionAsync_UsesPausedTidalMediaSessionMetadata_WhenGenericWindowTitleIsOnlyImmediateSignal()
+    {
+        using var harness = new BridgeServiceHarness();
+        harness.Settings.EnableWindowTitleFallback = true;
+        harness.WindowTitleDetector.Result = null;
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        var baselineState = await harness.Service.RunDetectionAsync(CancellationToken.None);
+
+        harness.PlaybackDetector.Outcomes.Enqueue(new PlaybackDetectionOutcome(
+            null,
+            new BrowserDebugState
+            {
+                Sessions =
+                [
+                    new BrowserSessionDebugInfo
+                    {
+                        Provider = "tidal",
+                        PlaybackState = "paused",
+                        SourceAppId = "com.squirrel.TIDAL.TIDAL",
+                        RawTitle = "30/90 (from \"tick, tick... BOOM!\")",
+                        RawArtist = "Ben Visini",
+                        ParsedTitle = "30/90 (from \"tick, tick... BOOM!\")",
+                        ParsedArtist = "Ben Visini",
+                        Confidence = 0.93,
+                        SessionId = "tidal-session",
+                        LastUpdatedUtc = DateTimeOffset.UtcNow.AddMinutes(-5)
+                    }
+                ]
+            }));
+        harness.WindowTitleDetector.Result = new DetectionResult
+        {
+            Status = "playing",
+            Artist = "",
+            Title = "TIDAL",
+            Method = "window_title",
+            Confidence = 0.61,
+            DetectedText = "TIDAL"
+        };
+
+        var state = await harness.Service.RunDetectionAsync(CancellationToken.None);
+
+        Assert.Equal("not_running", baselineState.NowPlaying.Status);
+        Assert.Equal("playing", state.NowPlaying.Status);
+        Assert.Equal("tidal", state.NowPlaying.Provider);
+        Assert.Equal("30/90 (from \"tick, tick... BOOM!\")", state.NowPlaying.Title);
+        Assert.Equal("Ben Visini", state.NowPlaying.Artist);
+        Assert.Equal("selected: generic TIDAL title matched paused media session", state.NowPlaying.SelectionReason);
+    }
+
+    [Fact]
+    public async Task RunDetectionAsync_UsesRecentGenericTidalWindowTitle_AfterBrowserStops_WhenTidalIsPreferred()
+    {
+        using var harness = new BridgeServiceHarness();
+        harness.Settings.EnableWindowTitleFallback = true;
+        harness.Settings.BrowserSettings.PreferTidalOverBrowser = true;
+        harness.PlaybackDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Browser Artist",
+            Title = "Browser Track",
+            Source = "YouTube",
+            Provider = "browser",
+            Browser = "firefox",
+            Site = "youtube",
+            Method = "media_session",
+            Confidence = 0.75
+        });
+        harness.WindowTitleDetector.Result = null;
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        var browserState = await harness.Service.RunDetectionAsync(CancellationToken.None);
+
+        harness.WindowTitleDetector.Result = new DetectionResult
+        {
+            Status = "playing",
+            Artist = "",
+            Title = "TIDAL",
+            Method = "window_title",
+            Confidence = 0.61,
+            DetectedText = "TIDAL"
+        };
+
+        var state = await harness.Service.RunDetectionAsync(CancellationToken.None);
+
+        Assert.Equal("browser", browserState.NowPlaying.Provider);
+        Assert.Equal("playing", state.NowPlaying.Status);
+        Assert.Equal("tidal", state.NowPlaying.Provider);
+        Assert.Equal("TIDAL", state.NowPlaying.Title);
+        Assert.Equal("selected: recent generic TIDAL title after browser stop", state.NowPlaying.SelectionReason);
+    }
+
+    [Fact]
+    public async Task RunDetectionAsync_DoesNotPreferIdleWindowTitleTidal_OverBrowser_WhenNoRecentTitleChange()
+    {
+        using var harness = new BridgeServiceHarness();
+        harness.Settings.EnableWindowTitleFallback = true;
+        harness.Settings.BrowserSettings.PreferTidalOverBrowser = true;
+        harness.PlaybackDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Browser Artist",
+            Title = "Browser Track",
+            Source = "YouTube",
+            Provider = "browser",
+            Browser = "firefox",
+            Site = "youtube",
+            Method = "media_session",
+            Confidence = 0.75
+        });
+        harness.PlaybackDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Browser Artist",
+            Title = "Browser Track",
+            Source = "YouTube",
+            Provider = "browser",
+            Browser = "firefox",
+            Site = "youtube",
+            Method = "media_session",
+            Confidence = 0.75
+        });
+        harness.WindowTitleDetector.Result = new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Tidal Artist",
+            Title = "Tidal Track",
+            Method = "window_title",
+            Confidence = 0.61
+        };
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        var state = await harness.Service.RunDetectionAsync(CancellationToken.None);
+
+        Assert.Equal("browser", state.NowPlaying.Provider);
+        Assert.Equal("Browser Artist", state.NowPlaying.Artist);
+        Assert.Equal("Browser Track", state.NowPlaying.Title);
+        Assert.Equal("media_session", state.NowPlaying.Method);
+    }
+
+    [Fact]
+    public async Task RunDetectionAsync_PrefersWindowTitleTidal_OverBrowser_AfterRecentTitleChange_WhenTidalPreferenceIsEnabled()
+    {
+        using var harness = new BridgeServiceHarness();
+        harness.Settings.EnableWindowTitleFallback = true;
+        harness.Settings.BrowserSettings.PreferTidalOverBrowser = true;
+        harness.PlaybackDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Browser Artist",
+            Title = "Browser Track",
+            Source = "YouTube",
+            Provider = "browser",
+            Browser = "firefox",
+            Site = "youtube",
+            Method = "media_session",
+            Confidence = 0.75
+        });
+        harness.PlaybackDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Browser Artist",
+            Title = "Browser Track",
+            Source = "YouTube",
+            Provider = "browser",
+            Browser = "firefox",
+            Site = "youtube",
+            Method = "media_session",
+            Confidence = 0.75
+        });
+        harness.PlaybackDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Browser Artist",
+            Title = "Browser Track",
+            Source = "YouTube",
+            Provider = "browser",
+            Browser = "firefox",
+            Site = "youtube",
+            Method = "media_session",
+            Confidence = 0.75
+        });
+        harness.PlaybackDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Browser Artist",
+            Title = "Browser Track",
+            Source = "YouTube",
+            Provider = "browser",
+            Browser = "firefox",
+            Site = "youtube",
+            Method = "media_session",
+            Confidence = 0.75
+        });
+        harness.PlaybackDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Browser Artist",
+            Title = "Browser Track",
+            Source = "YouTube",
+            Provider = "browser",
+            Browser = "firefox",
+            Site = "youtube",
+            Method = "media_session",
+            Confidence = 0.75
+        });
+        harness.PlaybackDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Browser Artist",
+            Title = "Browser Track",
+            Source = "YouTube",
+            Provider = "browser",
+            Browser = "firefox",
+            Site = "youtube",
+            Method = "media_session",
+            Confidence = 0.75
+        });
+        harness.PlaybackDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Browser Artist",
+            Title = "Browser Track",
+            Source = "YouTube",
+            Provider = "browser",
+            Browser = "firefox",
+            Site = "youtube",
+            Method = "media_session",
+            Confidence = 0.75
+        });
+        harness.PlaybackDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Browser Artist",
+            Title = "Browser Track",
+            Source = "YouTube",
+            Provider = "browser",
+            Browser = "firefox",
+            Site = "youtube",
+            Method = "media_session",
+            Confidence = 0.75
+        });
+        harness.PlaybackDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Browser Artist",
+            Title = "Browser Track",
+            Source = "YouTube",
+            Provider = "browser",
+            Browser = "firefox",
+            Site = "youtube",
+            Method = "media_session",
+            Confidence = 0.75
+        });
+        harness.WindowTitleDetector.Result = new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Idle Artist",
+            Title = "Idle Track",
+            Method = "window_title",
+            Confidence = 0.61
+        };
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        var baseline = await harness.Service.RunDetectionAsync(CancellationToken.None);
+
+        harness.WindowTitleDetector.Result = new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Tidal Artist",
+            Title = "Tidal Track",
+            Method = "window_title",
+            Confidence = 0.61
+        };
+
+        var state = await harness.Service.RunDetectionAsync(CancellationToken.None);
+        var stickyState = await harness.Service.RunDetectionAsync(CancellationToken.None);
+
+        Assert.Equal("browser", baseline.NowPlaying.Provider);
+        Assert.Equal("tidal", state.NowPlaying.Provider);
+        Assert.Equal("Tidal Artist", state.NowPlaying.Artist);
+        Assert.Equal("Tidal Track", state.NowPlaying.Title);
+        Assert.Equal("window_title", state.NowPlaying.Method);
+        Assert.Equal("selected: window title preferred over browser", state.NowPlaying.SelectionReason);
+        Assert.Equal("tidal", stickyState.NowPlaying.Provider);
+        Assert.Equal("Tidal Artist", stickyState.NowPlaying.Artist);
+        Assert.Equal("Tidal Track", stickyState.NowPlaying.Title);
+    }
+
+    [Fact]
+    public async Task RunDetectionAsync_HoldsWindowTitleTidalFallback_ThroughBriefGenericAndNullDropout()
+    {
+        using var harness = new BridgeServiceHarness();
+        harness.Settings.EnableWindowTitleFallback = true;
+        harness.Settings.BrowserSettings.PreferTidalOverBrowser = true;
+        harness.Settings.BrowserSettings.SourceSwitchCooldownMs = 250;
+        harness.PlaybackDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Browser Artist",
+            Title = "Browser Track",
+            Source = "YouTube",
+            Provider = "browser",
+            Browser = "firefox",
+            Site = "youtube",
+            Method = "media_session",
+            Confidence = 0.75
+        });
+        harness.PlaybackDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Browser Artist",
+            Title = "Browser Track",
+            Source = "YouTube",
+            Provider = "browser",
+            Browser = "firefox",
+            Site = "youtube",
+            Method = "media_session",
+            Confidence = 0.75
+        });
+        harness.PlaybackDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Browser Artist",
+            Title = "Browser Track",
+            Source = "YouTube",
+            Provider = "browser",
+            Browser = "firefox",
+            Site = "youtube",
+            Method = "media_session",
+            Confidence = 0.75
+        });
+        harness.WindowTitleDetector.Result = new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Idle Artist",
+            Title = "Idle Track",
+            Method = "window_title",
+            Confidence = 0.61
+        };
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        await harness.Service.RunDetectionAsync(CancellationToken.None);
+
+        harness.WindowTitleDetector.Result = new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Tidal Artist",
+            Title = "Tidal Track",
+            Method = "window_title",
+            Confidence = 0.61
+        };
+
+        var switchedState = await harness.Service.RunDetectionAsync(CancellationToken.None);
+        harness.WindowTitleDetector.Result = new DetectionResult
+        {
+            Status = "playing",
+            Artist = "",
+            Title = "TIDAL",
+            Method = "window_title",
+            Confidence = 0.61,
+            DetectedText = "TIDAL"
+        };
+        await Task.Delay(350);
+        var bridgedState = await harness.Service.RunDetectionAsync(CancellationToken.None);
+        await Task.Delay(350);
+        harness.WindowTitleDetector.Result = null;
+        var droppedState = await harness.Service.RunDetectionAsync(CancellationToken.None);
+
+        Assert.Equal("tidal", switchedState.NowPlaying.Provider);
+        Assert.Equal("tidal", bridgedState.NowPlaying.Provider);
+        Assert.Equal("tidal", droppedState.NowPlaying.Provider);
+        Assert.Equal("Tidal Track", droppedState.NowPlaying.Title);
+    }
+
+    [Fact]
+    public async Task RunDetectionAsync_KeepsWindowTitleTidalFallback_WhileSameTrackRemainsPresent()
+    {
+        using var harness = new BridgeServiceHarness();
+        harness.Settings.EnableWindowTitleFallback = true;
+        harness.Settings.BrowserSettings.PreferTidalOverBrowser = true;
+        harness.Settings.BrowserSettings.SourceSwitchCooldownMs = 250;
+        harness.PlaybackDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Browser Artist",
+            Title = "Browser Track",
+            Source = "YouTube",
+            Provider = "browser",
+            Browser = "firefox",
+            Site = "youtube",
+            Method = "media_session",
+            Confidence = 0.75
+        });
+        harness.PlaybackDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Browser Artist",
+            Title = "Browser Track",
+            Source = "YouTube",
+            Provider = "browser",
+            Browser = "firefox",
+            Site = "youtube",
+            Method = "media_session",
+            Confidence = 0.75
+        });
+        harness.PlaybackDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Browser Artist",
+            Title = "Browser Track",
+            Source = "YouTube",
+            Provider = "browser",
+            Browser = "firefox",
+            Site = "youtube",
+            Method = "media_session",
+            Confidence = 0.75
+        });
+        harness.WindowTitleDetector.Result = new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Idle Artist",
+            Title = "Idle Track",
+            Method = "window_title",
+            Confidence = 0.61
+        };
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        await harness.Service.RunDetectionAsync(CancellationToken.None);
+
+        harness.WindowTitleDetector.Result = new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Tidal Artist",
+            Title = "Tidal Track",
+            Method = "window_title",
+            Confidence = 0.61
+        };
+
+        var switchedState = await harness.Service.RunDetectionAsync(CancellationToken.None);
+        await Task.Delay(350);
+        var heldState = await harness.Service.RunDetectionAsync(CancellationToken.None);
+
+        Assert.Equal("tidal", switchedState.NowPlaying.Provider);
+        Assert.Equal("tidal", heldState.NowPlaying.Provider);
+        Assert.Equal("Tidal Track", heldState.NowPlaying.Title);
+        Assert.Equal("Tidal Artist", heldState.NowPlaying.Artist);
+        Assert.Equal("selected: window title preferred over browser", heldState.NowPlaying.SelectionReason);
+    }
+
+    [Fact]
+    public async Task RunDetectionAsync_HoldsWindowTitleTidalFallback_Briefly_WhenTitleSignalDropsOut()
+    {
+        using var harness = new BridgeServiceHarness();
+        harness.Settings.EnableWindowTitleFallback = true;
+        harness.Settings.BrowserSettings.PreferTidalOverBrowser = true;
+        harness.Settings.BrowserSettings.SourceSwitchCooldownMs = 250;
+        harness.PlaybackDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Browser Artist",
+            Title = "Browser Track",
+            Source = "YouTube",
+            Provider = "browser",
+            Browser = "firefox",
+            Site = "youtube",
+            Method = "media_session",
+            Confidence = 0.75
+        });
+        harness.PlaybackDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Browser Artist",
+            Title = "Browser Track",
+            Source = "YouTube",
+            Provider = "browser",
+            Browser = "firefox",
+            Site = "youtube",
+            Method = "media_session",
+            Confidence = 0.75
+        });
+        harness.WindowTitleDetector.Result = new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Idle Artist",
+            Title = "Idle Track",
+            Method = "window_title",
+            Confidence = 0.61
+        };
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        await harness.Service.RunDetectionAsync(CancellationToken.None);
+
+        harness.WindowTitleDetector.Result = new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Tidal Artist",
+            Title = "Tidal Track",
+            Method = "window_title",
+            Confidence = 0.61
+        };
+
+        var switchedState = await harness.Service.RunDetectionAsync(CancellationToken.None);
+        harness.WindowTitleDetector.Result = null;
+        var heldState = await harness.Service.RunDetectionAsync(CancellationToken.None);
+
+        Assert.Equal("tidal", switchedState.NowPlaying.Provider);
+        Assert.Equal("tidal", heldState.NowPlaying.Provider);
+        Assert.Equal("selected: holding window title fallback after detection loss", heldState.NowPlaying.SelectionReason);
+    }
+
+    [Fact]
+    public async Task RunDetectionAsync_HoldsRecentWindowTitleTidalTrack_WhenTitleTemporarilyFallsBackToGeneric()
+    {
+        using var harness = new BridgeServiceHarness();
+        harness.Settings.EnableWindowTitleFallback = true;
+        harness.WindowTitleDetector.Result = null;
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        await harness.Service.RunDetectionAsync(CancellationToken.None);
+
+        harness.WindowTitleDetector.Result = new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Tidal Artist",
+            Title = "Tidal Track",
+            Method = "window_title",
+            Confidence = 0.72,
+            DetectedText = "Tidal Track - Tidal Artist"
+        };
+
+        var playingState = await harness.Service.RunDetectionAsync(CancellationToken.None);
+
+        harness.WindowTitleDetector.Result = new DetectionResult
+        {
+            Status = "playing",
+            Artist = "",
+            Title = "TIDAL",
+            Method = "window_title",
+            Confidence = 0.66,
+            DetectedText = "TIDAL"
+        };
+
+        var heldState = await harness.Service.RunDetectionAsync(CancellationToken.None);
+
+        Assert.Equal("tidal", playingState.NowPlaying.Provider);
+        Assert.Equal("Tidal Track", playingState.NowPlaying.Title);
+        Assert.Equal("tidal", heldState.NowPlaying.Provider);
+        Assert.Equal("Tidal Track", heldState.NowPlaying.Title);
+        Assert.Equal("Tidal Artist", heldState.NowPlaying.Artist);
+        Assert.Equal("selected: holding recent TIDAL window title track", heldState.NowPlaying.SelectionReason);
+    }
+
+    [Fact]
     public async Task RunDetectionAsync_UsesManualInputFallback_WhenEnabled()
     {
         using var harness = new BridgeServiceHarness();
@@ -149,6 +756,7 @@ public sealed class BridgeServiceBehaviorTests
                 BrowserArtworkEnabled = false,
                 YouTubeVideoImageFallbackEnabled = false,
                 DebugLoggingEnabled = true,
+                DeepDiagnosticLoggingEnabled = true,
                 IgnorePausedSessions = false,
                 IgnoreStaleSessions = false,
                 StaleSessionAfterSeconds = -9
@@ -166,9 +774,393 @@ public sealed class BridgeServiceBehaviorTests
         Assert.False(state.Settings.BrowserSettings.BrowserArtworkEnabled);
         Assert.False(state.Settings.BrowserSettings.YouTubeVideoImageFallbackEnabled);
         Assert.True(state.Settings.BrowserSettings.DebugLoggingEnabled);
+        Assert.True(state.Settings.BrowserSettings.DeepDiagnosticLoggingEnabled);
         Assert.False(state.Settings.BrowserSettings.IgnorePausedSessions);
         Assert.False(state.Settings.BrowserSettings.IgnoreStaleSessions);
         Assert.True(state.Settings.BrowserSettings.SupportedBrowsers.OperaEnabled);
+    }
+
+    [Fact]
+    public async Task SaveSettingsAsync_PreservesValidOverlaySettings()
+    {
+        using var harness = new BridgeServiceHarness();
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        var state = await harness.Service.SaveSettingsAsync(new Settings
+        {
+            OutputFolder = harness.Settings.OutputFolder,
+            OverlaySettings = new OverlaySettings
+            {
+                SongTextStyle = new OverlayTextStyle
+                {
+                    FontFamily = "Fira Sans",
+                    ColorHex = "#a1b2c3",
+                    FontSizePx = 28,
+                    MaxCharacters = 64,
+                    Bold = true
+                },
+                ArtistTextStyle = new OverlayTextStyle
+                {
+                    FontFamily = "IBM Plex Sans",
+                    ColorHex = "#0f0f0f",
+                    FontSizePx = 16,
+                    MaxCharacters = 42
+                },
+                AlbumTextStyle = new OverlayTextStyle
+                {
+                    FontFamily = "IBM Plex Sans",
+                    ColorHex = "#ffffff",
+                    FontSizePx = 14,
+                    MaxCharacters = 30
+                },
+                ImageSizePx = 72,
+                BackgroundColorHex = "#112233",
+                OverlayContainerStyle = new OverlayContainerStyle
+                {
+                    BackgroundMode = "gradient",
+                    BackgroundColorHex = "",
+                    Gradient = new GradientSettings
+                    {
+                        ColorCount = 2,
+                        Preset = "Soft Radial",
+                        Color1Hex = "#010203",
+                        Color2Hex = "#040506",
+                        Color3Hex = "#070809",
+                        AngleDeg = 180
+                    },
+                    Opacity = 0.42,
+                    CornerRadiusPx = 12,
+                    PaddingPx = 18,
+                    GapPx = 9,
+                    BorderEnabled = true,
+                    BorderColorHex = "#abcdef",
+                    BorderWidthPx = 2
+                },
+                StatusPillStyle = new StatusPillStyle
+                {
+                    BackgroundColorHex = "#123456",
+                    TextColorHex = "#654321",
+                    Opacity = 0.75,
+                    FontFamily = "JetBrains Mono",
+                    FontSizePx = 13,
+                    CornerRadiusPx = 18,
+                    PaddingHorizontalPx = 8,
+                    PaddingVerticalPx = 3
+                },
+                ImagePosition = "Right",
+                TextAlign = "Center",
+                ShowAppName = false,
+                ShowPlaybackState = false,
+                ShowPlaybackProvider = true
+            },
+            BrowserSettings = harness.Settings.BrowserSettings
+        }, CancellationToken.None);
+
+        Assert.Equal("Fira Sans", state.Settings.OverlaySettings.SongTextStyle.FontFamily);
+        Assert.Equal("#A1B2C3", state.Settings.OverlaySettings.SongTextStyle.ColorHex);
+        Assert.Equal(64, state.Settings.OverlaySettings.SongTextStyle.MaxCharacters);
+        Assert.Equal("#112233", state.Settings.OverlaySettings.OverlayContainerStyle.BackgroundColorHex);
+        Assert.Equal("gradient", state.Settings.OverlaySettings.OverlayContainerStyle.BackgroundMode);
+        Assert.Equal(2, state.Settings.OverlaySettings.OverlayContainerStyle.Gradient.ColorCount);
+        Assert.Equal("Soft Radial", state.Settings.OverlaySettings.OverlayContainerStyle.Gradient.Preset);
+        Assert.Equal(180, state.Settings.OverlaySettings.OverlayContainerStyle.Gradient.AngleDeg);
+        Assert.Equal(0.42, state.Settings.OverlaySettings.OverlayContainerStyle.Opacity);
+        Assert.Equal("#ABCDEF", state.Settings.OverlaySettings.OverlayContainerStyle.BorderColorHex);
+        Assert.Equal("JetBrains Mono", state.Settings.OverlaySettings.StatusPillStyle.FontFamily);
+        Assert.Equal("Right", state.Settings.OverlaySettings.ImagePosition);
+        Assert.Equal("Center", state.Settings.OverlaySettings.TextAlign);
+        Assert.False(state.Settings.OverlaySettings.ShowAppName);
+        Assert.False(state.Settings.OverlaySettings.ShowPlaybackState);
+        Assert.True(state.Settings.OverlaySettings.ShowPlaybackProvider);
+    }
+
+    [Fact]
+    public async Task SaveSettingsAsync_RestoresDefaultBrowserPriority_WhenPriorityListIsMissing()
+    {
+        using var harness = new BridgeServiceHarness();
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        var state = await harness.Service.SaveSettingsAsync(new Settings
+        {
+            OutputFolder = harness.Settings.OutputFolder,
+            BrowserSettings = new BrowserSettings
+            {
+                Enabled = true,
+                ActiveSourceMode = "tidal",
+                SupportedBrowsers = new BrowserSupportSettings(),
+                SourcePriority = null!,
+                SourceSwitchCooldownMs = 1500,
+                AllowGenericPlayback = true,
+                PreferTidalOverBrowser = true,
+                MetadataCleanupEnabled = true,
+                BrowserArtworkEnabled = true,
+                YouTubeVideoImageFallbackEnabled = true,
+                IgnorePausedSessions = true,
+                IgnoreStaleSessions = true,
+                StaleSessionAfterSeconds = 15
+            },
+            OverlaySettings = new OverlaySettings()
+        }, CancellationToken.None);
+
+        Assert.Equal("tidal", state.Settings.BrowserSettings.ActiveSourceMode);
+        Assert.Equal(
+            ["tidal", "youtubeMusic", "bandcamp", "soundcloud", "youtube", "genericBrowser"],
+            state.Settings.BrowserSettings.SourcePriority);
+        Assert.Equal(1500, state.Settings.BrowserSettings.SourceSwitchCooldownMs);
+        Assert.Equal(15, state.Settings.BrowserSettings.StaleSessionAfterSeconds);
+    }
+
+    [Fact]
+    public async Task RunDetectionAsync_RedactsSensitiveDebugIdentifiers_WhenDeepDiagnosticsAreDisabled()
+    {
+        using var harness = new BridgeServiceHarness();
+        harness.Settings.BrowserSettings.DebugLoggingEnabled = true;
+        harness.PlaybackDetector.Outcomes.Enqueue(new PlaybackDetectionOutcome(
+            new DetectionResult
+            {
+                Status = "playing",
+                Artist = "Artist",
+                Title = "Track",
+                Provider = "browser",
+                Method = "media_session",
+                Confidence = 0.8
+            },
+            new BrowserDebugState
+            {
+                Sessions =
+                [
+                    new BrowserSessionDebugInfo
+                    {
+                        SessionId = "browser-session-id",
+                        Provider = "browser",
+                        Browser = "firefox",
+                        Site = "youtube",
+                        PlaybackState = "playing",
+                        SourceAppId = "firefox-app-id",
+                        ParsedArtist = "Artist",
+                        ParsedTitle = "Track",
+                        DecisionReason = "selected"
+                    }
+                ],
+                RawSessions =
+                [
+                    new RawMediaSessionDebugInfo
+                    {
+                        SessionId = "raw-session-id",
+                        SourceAppId = "raw-source-app-id",
+                        Browser = "firefox",
+                        IsPlaying = true,
+                        LastUpdatedUtc = DateTimeOffset.UtcNow,
+                        Title = "Track",
+                        Artist = "Artist",
+                        Album = "Album"
+                    }
+                ],
+                AudioEndpoints =
+                [
+                    new RawAudioEndpointDebugInfo
+                    {
+                        EndpointId = "endpoint-123",
+                        FriendlyName = "VoiceMeeter Input",
+                        DeviceState = "active",
+                        IsDefaultMultimedia = true
+                    }
+                ],
+                AudioSessions =
+                [
+                    new RawAudioSessionDebugInfo
+                    {
+                        SessionId = "audio-session-id",
+                        EndpointId = "endpoint-123",
+                        ProcessId = 42,
+                        ProcessName = "firefox",
+                        DisplayName = "Firefox Media Session",
+                        State = "Active",
+                        PeakLevel = 0.32f,
+                        CapturedAtUtc = DateTimeOffset.UtcNow
+                    }
+                ]
+            }));
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        await harness.Service.RunDetectionAsync(CancellationToken.None);
+        var log = ReadSharedText(harness.LogPath);
+
+        Assert.Contains("sessionId=hash:", log);
+        Assert.Contains("sourceAppId=\"hash:", log);
+        Assert.Contains("endpointId=\"hash:", log);
+        Assert.Contains("friendlyName=\"redacted(hash:", log);
+        Assert.Contains("displayName=\"redacted(hash:", log);
+        Assert.DoesNotContain("browser-session-id", log);
+        Assert.DoesNotContain("raw-source-app-id", log);
+        Assert.DoesNotContain("VoiceMeeter Input", log);
+        Assert.DoesNotContain("Firefox Media Session", log);
+    }
+
+    [Fact]
+    public async Task RunDetectionAsync_DoesNotWriteBrowserDebugLogLines_WhenDebugLoggingIsDisabled()
+    {
+        using var harness = new BridgeServiceHarness();
+        harness.PlaybackDetector.Outcomes.Enqueue(new PlaybackDetectionOutcome(
+            null,
+            new BrowserDebugState
+            {
+                RawSessions =
+                [
+                    new RawMediaSessionDebugInfo
+                    {
+                        SessionId = "raw-session-id",
+                        SourceAppId = "raw-source-app-id",
+                        Browser = "firefox",
+                        IsPlaying = true,
+                        LastUpdatedUtc = DateTimeOffset.UtcNow,
+                        Title = "Track",
+                        Artist = "Artist",
+                        Album = "Album"
+                    }
+                ],
+                AudioEndpoints =
+                [
+                    new RawAudioEndpointDebugInfo
+                    {
+                        EndpointId = "endpoint-123",
+                        FriendlyName = "VoiceMeeter Input",
+                        DeviceState = "active",
+                        IsDefaultMultimedia = true
+                    }
+                ],
+                AudioSessions =
+                [
+                    new RawAudioSessionDebugInfo
+                    {
+                        SessionId = "audio-session-id",
+                        EndpointId = "endpoint-123",
+                        ProcessId = 42,
+                        ProcessName = "firefox",
+                        DisplayName = "Firefox Media Session",
+                        State = "Active",
+                        PeakLevel = 0.32f,
+                        CapturedAtUtc = DateTimeOffset.UtcNow
+                    }
+                ]
+            }));
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        await harness.Service.RunDetectionAsync(CancellationToken.None);
+        var log = ReadSharedText(harness.LogPath);
+
+        Assert.DoesNotContain("raw-media-session", log);
+        Assert.DoesNotContain("raw-audio-endpoint", log);
+        Assert.DoesNotContain("raw-audio-session", log);
+        Assert.DoesNotContain("browser-debug", log);
+    }
+
+    [Fact]
+    public async Task RunDetectionAsync_LeavesBlankSensitiveFieldsBlank_WhenDeepDiagnosticsAreDisabled()
+    {
+        using var harness = new BridgeServiceHarness();
+        harness.Settings.BrowserSettings.DebugLoggingEnabled = true;
+        harness.PlaybackDetector.Outcomes.Enqueue(new PlaybackDetectionOutcome(
+            null,
+            new BrowserDebugState
+            {
+                Sessions =
+                [
+                    new BrowserSessionDebugInfo
+                    {
+                        SessionId = "",
+                        Provider = "browser",
+                        Browser = "firefox",
+                        Site = "youtube",
+                        PlaybackState = "playing",
+                        SourceAppId = "",
+                        ParsedArtist = "Artist",
+                        ParsedTitle = "Track",
+                        DecisionReason = "selected"
+                    }
+                ],
+                AudioEndpoints =
+                [
+                    new RawAudioEndpointDebugInfo
+                    {
+                        EndpointId = "",
+                        FriendlyName = "",
+                        DeviceState = "active",
+                        IsDefaultMultimedia = true
+                    }
+                ],
+                AudioSessions =
+                [
+                    new RawAudioSessionDebugInfo
+                    {
+                        SessionId = "",
+                        EndpointId = "",
+                        ProcessId = 42,
+                        ProcessName = "firefox",
+                        DisplayName = "",
+                        State = "Active",
+                        PeakLevel = 0.32f,
+                        CapturedAtUtc = DateTimeOffset.UtcNow
+                    }
+                ]
+            }));
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        await harness.Service.RunDetectionAsync(CancellationToken.None);
+        var log = ReadSharedText(harness.LogPath);
+
+        Assert.Contains("sessionId= provider=browser", log);
+        Assert.Contains("sourceAppId=\"\" parsedArtist=\"Artist\"", log);
+        Assert.Contains("endpointId=\"\" friendlyName=\"\"", log);
+        Assert.Contains("displayName=\"\" state=Active", log);
+        Assert.DoesNotContain("hash:", log);
+        Assert.DoesNotContain("redacted(hash:", log);
+    }
+
+    [Fact]
+    public async Task RunDetectionAsync_LogsFullSensitiveDebugIdentifiers_WhenDeepDiagnosticsAreEnabled()
+    {
+        using var harness = new BridgeServiceHarness();
+        harness.Settings.BrowserSettings.DebugLoggingEnabled = true;
+        harness.Settings.BrowserSettings.DeepDiagnosticLoggingEnabled = true;
+        harness.PlaybackDetector.Outcomes.Enqueue(new PlaybackDetectionOutcome(
+            null,
+            new BrowserDebugState
+            {
+                AudioEndpoints =
+                [
+                    new RawAudioEndpointDebugInfo
+                    {
+                        EndpointId = "endpoint-123",
+                        FriendlyName = "VoiceMeeter Input",
+                        DeviceState = "active",
+                        IsDefaultMultimedia = true
+                    }
+                ],
+                AudioSessions =
+                [
+                    new RawAudioSessionDebugInfo
+                    {
+                        SessionId = "audio-session-id",
+                        EndpointId = "endpoint-123",
+                        ProcessId = 42,
+                        ProcessName = "firefox",
+                        DisplayName = "Firefox Media Session",
+                        State = "Active",
+                        PeakLevel = 0.32f,
+                        CapturedAtUtc = DateTimeOffset.UtcNow
+                    }
+                ]
+            }));
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        await harness.Service.RunDetectionAsync(CancellationToken.None);
+        var log = ReadSharedText(harness.LogPath);
+
+        Assert.Contains("sessionId=audio-session-id", log);
+        Assert.Contains("endpointId=\"endpoint-123\"", log);
+        Assert.Contains("friendlyName=\"VoiceMeeter Input\"", log);
+        Assert.Contains("displayName=\"Firefox Media Session\"", log);
     }
 
     [Fact]
@@ -287,6 +1279,38 @@ public sealed class BridgeServiceBehaviorTests
     }
 
     [Fact]
+    public async Task RunDetectionAsync_DoesNotRenewHeldTrackForever_AfterSessionLoss()
+    {
+        using var harness = new BridgeServiceHarness();
+        harness.Settings.BrowserSettings.SourceSwitchCooldownMs = 5;
+        harness.PlaybackDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Browser Artist",
+            Title = "Browser Track",
+            Source = "YouTube",
+            Provider = "browser",
+            Browser = "firefox",
+            Site = "youtube",
+            Method = "media_session",
+            Confidence = 0.75
+        });
+        harness.PlaybackDetector.Results.Enqueue(null);
+        harness.PlaybackDetector.Results.Enqueue(null);
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        await harness.Service.RunDetectionAsync(CancellationToken.None);
+
+        var heldState = await harness.Service.RunDetectionAsync(CancellationToken.None);
+        await Task.Delay(25);
+        var expiredState = await harness.Service.RunDetectionAsync(CancellationToken.None);
+
+        Assert.Equal("playing", heldState.NowPlaying.Status);
+        Assert.Equal("Browser Track", heldState.NowPlaying.Title);
+        Assert.Equal("not_running", expiredState.NowPlaying.Status);
+    }
+
+    [Fact]
     public async Task RunDetectionAsync_ReusesConfirmedCache_ForSameTrackWithMissingMetadata()
     {
         using var harness = new BridgeServiceHarness();
@@ -322,6 +1346,13 @@ public sealed class BridgeServiceBehaviorTests
         Assert.Equal("cover.jpg", state.NowPlaying.ArtworkPath);
         Assert.Equal([4, 5, 6], state.NowPlaying.ArtworkBytes);
         Assert.Equal("itunes_search", state.NowPlaying.MetadataSource);
+    }
+
+    private static string ReadSharedText(string path)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
     }
 
     private sealed class BridgeServiceHarness : IDisposable
@@ -377,6 +1408,7 @@ public sealed class BridgeServiceBehaviorTests
         public ConfigurableOverlayCoordinator OverlayCoordinator { get; }
         public RecordingOutputWriter OutputWriter { get; }
         public BridgeService Service { get; }
+        public string LogPath => Path.Combine(_tempDir, "bridge.log");
 
         public void Dispose()
         {
@@ -419,6 +1451,7 @@ public sealed class BridgeServiceBehaviorTests
     private sealed class SequencePlaybackDetector : IPlaybackDetector
     {
         public Queue<DetectionResult?> Results { get; } = [];
+        public Queue<PlaybackDetectionOutcome> Outcomes { get; } = [];
         public Exception? Exception { get; set; }
 
         public Task<PlaybackDetectionOutcome> DetectAsync(DetectionResult previous, Settings settings, CancellationToken cancellationToken)
@@ -426,6 +1459,14 @@ public sealed class BridgeServiceBehaviorTests
             if (Exception is not null)
             {
                 throw Exception;
+            }
+
+            if (Outcomes.Count > 0)
+            {
+                var outcome = Outcomes.Dequeue();
+                return Task.FromResult(new PlaybackDetectionOutcome(
+                    outcome.Result is null ? null : BridgeStatePolicy.CloneDetection(outcome.Result),
+                    CloneBrowserDebugState(outcome.BrowserDebug)));
             }
 
             if (Results.Count == 0)
@@ -436,6 +1477,34 @@ public sealed class BridgeServiceBehaviorTests
             var result = Results.Dequeue();
             return Task.FromResult(new PlaybackDetectionOutcome(result is null ? null : BridgeStatePolicy.CloneDetection(result), new BrowserDebugState()));
         }
+
+        private static BrowserDebugState CloneBrowserDebugState(BrowserDebugState state) => new()
+        {
+            Sessions = state.Sessions.Select(session => new BrowserSessionDebugInfo
+            {
+                Provider = session.Provider,
+                Browser = session.Browser,
+                Site = session.Site,
+                PlaybackState = session.PlaybackState,
+                SourceAppId = session.SourceAppId,
+                RawTitle = session.RawTitle,
+                RawArtist = session.RawArtist,
+                RawAlbum = session.RawAlbum,
+                ParsedTitle = session.ParsedTitle,
+                ParsedArtist = session.ParsedArtist,
+                ParsedAlbum = session.ParsedAlbum,
+                Confidence = session.Confidence,
+                HasArtwork = session.HasArtwork,
+                IsSelected = session.IsSelected,
+                DecisionReason = session.DecisionReason,
+                SessionId = session.SessionId,
+                LastUpdatedUtc = session.LastUpdatedUtc
+            }).ToList(),
+            RawSessions = state.RawSessions.ToList(),
+            AudioEndpoints = state.AudioEndpoints.ToList(),
+            AudioSessions = state.AudioSessions.ToList(),
+            WindowTitles = state.WindowTitles.ToList()
+        };
     }
 
     private sealed class ConfigurableWindowTitleDetector : IWindowTitleDetector

@@ -23,6 +23,7 @@ public sealed record MediaSessionSnapshot(
     string SourceAppId,
     string Browser,
     string Site,
+    bool IsPlaying,
     bool IsPaused,
     string Title,
     string Artist,
@@ -31,11 +32,41 @@ public sealed record MediaSessionSnapshot(
     DateTimeOffset LastUpdatedUtc,
     byte[] ArtworkBytes);
 
+public sealed record AudioSessionSnapshot(
+    string SessionId,
+    string EndpointId,
+    int ProcessId,
+    string ProcessName,
+    string DisplayName,
+    string IconPath,
+    string SessionIdentifier,
+    string SessionInstanceIdentifier,
+    string State,
+    bool IsSystemSoundsSession,
+    bool IsMuted,
+    float PeakLevel,
+    DateTimeOffset CapturedAtUtc);
+
+public sealed record AudioEndpointSnapshot(
+    string EndpointId,
+    string FriendlyName,
+    string DeviceState,
+    bool IsDefaultMultimedia);
+
+public sealed record AudioSessionSnapshotResult(
+    IReadOnlyList<AudioEndpointSnapshot> Endpoints,
+    IReadOnlyList<AudioSessionSnapshot> Sessions);
+
 public sealed record PlaybackDetectionOutcome(DetectionResult? Result, BrowserDebugState BrowserDebug);
 
 public interface IMediaSessionSnapshotProvider
 {
     Task<IReadOnlyList<MediaSessionSnapshot>> GetCurrentAsync(CancellationToken cancellationToken);
+}
+
+public interface IAudioSessionSnapshotProvider
+{
+    Task<AudioSessionSnapshotResult> GetCurrentAsync(CancellationToken cancellationToken);
 }
 
 public interface IWindowTitleDetector

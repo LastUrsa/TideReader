@@ -1,4 +1,6 @@
 using TideReader.Backend.Models;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.RegularExpressions;
 
 namespace TideReader.Backend.Services;
@@ -742,10 +744,13 @@ public sealed class BridgeService
             return;
         }
 
+        var includeFullIdentifiers = settings.BrowserSettings.DeepDiagnosticLoggingEnabled;
+
         foreach (var session in debugState.RawSessions)
         {
             _logger.Info(
-                $"raw-media-session sessionId={session.SessionId} sourceAppId=\"{session.SourceAppId}\" browser={session.Browser} " +
+                $"raw-media-session sessionId={FormatIdentifier(session.SessionId, includeFullIdentifiers)} " +
+                $"sourceAppId=\"{FormatIdentifier(session.SourceAppId, includeFullIdentifiers)}\" browser={session.Browser} " +
                 $"isPlaying={session.IsPlaying} isPaused={session.IsPaused} lastUpdatedUtc={session.LastUpdatedUtc:O} " +
                 $"title=\"{session.Title}\" artist=\"{session.Artist}\" album=\"{session.Album}\"");
         }
@@ -753,15 +758,17 @@ public sealed class BridgeService
         foreach (var endpoint in debugState.AudioEndpoints)
         {
             _logger.Info(
-                $"raw-audio-endpoint endpointId=\"{endpoint.EndpointId}\" friendlyName=\"{endpoint.FriendlyName}\" " +
+                $"raw-audio-endpoint endpointId=\"{FormatIdentifier(endpoint.EndpointId, includeFullIdentifiers)}\" " +
+                $"friendlyName=\"{FormatSensitiveText(endpoint.FriendlyName, includeFullIdentifiers)}\" " +
                 $"state={endpoint.DeviceState} defaultMultimedia={endpoint.IsDefaultMultimedia}");
         }
 
         foreach (var session in debugState.AudioSessions)
         {
             _logger.Info(
-                $"raw-audio-session sessionId={session.SessionId} endpointId=\"{session.EndpointId}\" pid={session.ProcessId} process=\"{session.ProcessName}\" " +
-                $"displayName=\"{session.DisplayName}\" state={session.State} muted={session.IsMuted} peak={session.PeakLevel:F4} " +
+                $"raw-audio-session sessionId={FormatIdentifier(session.SessionId, includeFullIdentifiers)} " +
+                $"endpointId=\"{FormatIdentifier(session.EndpointId, includeFullIdentifiers)}\" pid={session.ProcessId} process=\"{session.ProcessName}\" " +
+                $"displayName=\"{FormatSensitiveText(session.DisplayName, includeFullIdentifiers)}\" state={session.State} muted={session.IsMuted} peak={session.PeakLevel:F4} " +
                 $"systemSounds={session.IsSystemSoundsSession} capturedAtUtc={session.CapturedAtUtc:O}");
         }
 
@@ -777,10 +784,47 @@ public sealed class BridgeService
         foreach (var session in debugState.Sessions)
         {
             _logger.Info(
-                $"browser-debug sessionId={session.SessionId} provider={session.Provider} browser={session.Browser} site={session.Site} " +
+                $"browser-debug sessionId={FormatIdentifier(session.SessionId, includeFullIdentifiers)} provider={session.Provider} browser={session.Browser} site={session.Site} " +
                 $"state={session.PlaybackState} selected={session.IsSelected} reason=\"{session.DecisionReason}\" " +
-                $"confidence={session.Confidence:F2} sourceAppId=\"{session.SourceAppId}\" parsedArtist=\"{session.ParsedArtist}\" parsedTitle=\"{session.ParsedTitle}\"");
+                $"confidence={session.Confidence:F2} sourceAppId=\"{FormatIdentifier(session.SourceAppId, includeFullIdentifiers)}\" " +
+                $"parsedArtist=\"{session.ParsedArtist}\" parsedTitle=\"{session.ParsedTitle}\"");
         }
+    }
+
+    private static string FormatIdentifier(string? value, bool includeFullValue)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "";
+        }
+
+        if (includeFullValue)
+        {
+            return value;
+        }
+
+        return $"hash:{HashIdentifier(value)}";
+    }
+
+    private static string FormatSensitiveText(string? value, bool includeFullValue)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "";
+        }
+
+        if (includeFullValue)
+        {
+            return value;
+        }
+
+        return $"redacted(hash:{HashIdentifier(value)})";
+    }
+
+    private static string HashIdentifier(string value)
+    {
+        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(value));
+        return Convert.ToHexString(bytes[..6]).ToLowerInvariant();
     }
 
     private BrowserDebugState GetCurrentBrowserDebugSnapshot()
@@ -1044,6 +1088,7 @@ public sealed class BridgeService
         BrowserArtworkEnabled = settings.BrowserArtworkEnabled,
         YouTubeVideoImageFallbackEnabled = settings.YouTubeVideoImageFallbackEnabled,
         DebugLoggingEnabled = settings.DebugLoggingEnabled,
+        DeepDiagnosticLoggingEnabled = settings.DeepDiagnosticLoggingEnabled,
         IgnorePausedSessions = settings.IgnorePausedSessions,
         IgnoreStaleSessions = settings.IgnoreStaleSessions,
         StaleSessionAfterSeconds = settings.StaleSessionAfterSeconds,

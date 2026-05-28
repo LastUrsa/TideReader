@@ -130,6 +130,7 @@ function createState(overrides?: Partial<AppState>): AppState {
         browserArtworkEnabled: true,
         youTubeVideoImageFallbackEnabled: true,
         debugLoggingEnabled: false,
+        deepDiagnosticLoggingEnabled: false,
         ignorePausedSessions: true,
         ignoreStaleSessions: true,
         staleSessionAfterSeconds: 30,
@@ -945,6 +946,7 @@ describe('App', () => {
         ignorePausedSessions: false,
         ignoreStaleSessions: false,
         debugLoggingEnabled: true,
+        deepDiagnosticLoggingEnabled: false,
       }),
     })));
   });

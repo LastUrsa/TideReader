@@ -143,6 +143,7 @@ public sealed class BrowserSettings
     public bool BrowserArtworkEnabled { get; set; } = true;
     public bool YouTubeVideoImageFallbackEnabled { get; set; } = true;
     public bool DebugLoggingEnabled { get; set; }
+    public bool DeepDiagnosticLoggingEnabled { get; set; }
     public bool IgnorePausedSessions { get; set; } = true;
     public bool IgnoreStaleSessions { get; set; } = true;
     public int StaleSessionAfterSeconds { get; set; } = 30;

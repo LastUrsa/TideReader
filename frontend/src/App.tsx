@@ -580,6 +580,13 @@ function App() {
                         debugLoggingEnabled: value,
                       },
                     })} />
+                    <Toggle label="Enable deep diagnostic logging" checked={draft.browserSettings.deepDiagnosticLoggingEnabled} onChange={(value) => setDraft({
+                      ...draft,
+                      browserSettings: {
+                        ...draft.browserSettings,
+                        deepDiagnosticLoggingEnabled: value,
+                      },
+                    })} />
                     <Toggle label="Show raw browser metadata" checked={draft.browserSettings.showRawBrowserMetadata} onChange={(value) => setDraft({
                       ...draft,
                       browserSettings: {

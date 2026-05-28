@@ -756,6 +756,7 @@ public sealed class BridgeServiceBehaviorTests
                 BrowserArtworkEnabled = false,
                 YouTubeVideoImageFallbackEnabled = false,
                 DebugLoggingEnabled = true,
+                DeepDiagnosticLoggingEnabled = true,
                 IgnorePausedSessions = false,
                 IgnoreStaleSessions = false,
                 StaleSessionAfterSeconds = -9
@@ -773,9 +774,143 @@ public sealed class BridgeServiceBehaviorTests
         Assert.False(state.Settings.BrowserSettings.BrowserArtworkEnabled);
         Assert.False(state.Settings.BrowserSettings.YouTubeVideoImageFallbackEnabled);
         Assert.True(state.Settings.BrowserSettings.DebugLoggingEnabled);
+        Assert.True(state.Settings.BrowserSettings.DeepDiagnosticLoggingEnabled);
         Assert.False(state.Settings.BrowserSettings.IgnorePausedSessions);
         Assert.False(state.Settings.BrowserSettings.IgnoreStaleSessions);
         Assert.True(state.Settings.BrowserSettings.SupportedBrowsers.OperaEnabled);
+    }
+
+    [Fact]
+    public async Task RunDetectionAsync_RedactsSensitiveDebugIdentifiers_WhenDeepDiagnosticsAreDisabled()
+    {
+        using var harness = new BridgeServiceHarness();
+        harness.Settings.BrowserSettings.DebugLoggingEnabled = true;
+        harness.PlaybackDetector.Outcomes.Enqueue(new PlaybackDetectionOutcome(
+            new DetectionResult
+            {
+                Status = "playing",
+                Artist = "Artist",
+                Title = "Track",
+                Provider = "browser",
+                Method = "media_session",
+                Confidence = 0.8
+            },
+            new BrowserDebugState
+            {
+                Sessions =
+                [
+                    new BrowserSessionDebugInfo
+                    {
+                        SessionId = "browser-session-id",
+                        Provider = "browser",
+                        Browser = "firefox",
+                        Site = "youtube",
+                        PlaybackState = "playing",
+                        SourceAppId = "firefox-app-id",
+                        ParsedArtist = "Artist",
+                        ParsedTitle = "Track",
+                        DecisionReason = "selected"
+                    }
+                ],
+                RawSessions =
+                [
+                    new RawMediaSessionDebugInfo
+                    {
+                        SessionId = "raw-session-id",
+                        SourceAppId = "raw-source-app-id",
+                        Browser = "firefox",
+                        IsPlaying = true,
+                        LastUpdatedUtc = DateTimeOffset.UtcNow,
+                        Title = "Track",
+                        Artist = "Artist",
+                        Album = "Album"
+                    }
+                ],
+                AudioEndpoints =
+                [
+                    new RawAudioEndpointDebugInfo
+                    {
+                        EndpointId = "endpoint-123",
+                        FriendlyName = "VoiceMeeter Input",
+                        DeviceState = "active",
+                        IsDefaultMultimedia = true
+                    }
+                ],
+                AudioSessions =
+                [
+                    new RawAudioSessionDebugInfo
+                    {
+                        SessionId = "audio-session-id",
+                        EndpointId = "endpoint-123",
+                        ProcessId = 42,
+                        ProcessName = "firefox",
+                        DisplayName = "Firefox Media Session",
+                        State = "Active",
+                        PeakLevel = 0.32f,
+                        CapturedAtUtc = DateTimeOffset.UtcNow
+                    }
+                ]
+            }));
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        await harness.Service.RunDetectionAsync(CancellationToken.None);
+        var log = ReadSharedText(harness.LogPath);
+
+        Assert.Contains("sessionId=hash:", log);
+        Assert.Contains("sourceAppId=\"hash:", log);
+        Assert.Contains("endpointId=\"hash:", log);
+        Assert.Contains("friendlyName=\"redacted(hash:", log);
+        Assert.Contains("displayName=\"redacted(hash:", log);
+        Assert.DoesNotContain("browser-session-id", log);
+        Assert.DoesNotContain("raw-source-app-id", log);
+        Assert.DoesNotContain("VoiceMeeter Input", log);
+        Assert.DoesNotContain("Firefox Media Session", log);
+    }
+
+    [Fact]
+    public async Task RunDetectionAsync_LogsFullSensitiveDebugIdentifiers_WhenDeepDiagnosticsAreEnabled()
+    {
+        using var harness = new BridgeServiceHarness();
+        harness.Settings.BrowserSettings.DebugLoggingEnabled = true;
+        harness.Settings.BrowserSettings.DeepDiagnosticLoggingEnabled = true;
+        harness.PlaybackDetector.Outcomes.Enqueue(new PlaybackDetectionOutcome(
+            null,
+            new BrowserDebugState
+            {
+                AudioEndpoints =
+                [
+                    new RawAudioEndpointDebugInfo
+                    {
+                        EndpointId = "endpoint-123",
+                        FriendlyName = "VoiceMeeter Input",
+                        DeviceState = "active",
+                        IsDefaultMultimedia = true
+                    }
+                ],
+                AudioSessions =
+                [
+                    new RawAudioSessionDebugInfo
+                    {
+                        SessionId = "audio-session-id",
+                        EndpointId = "endpoint-123",
+                        ProcessId = 42,
+                        ProcessName = "firefox",
+                        DisplayName = "Firefox Media Session",
+                        State = "Active",
+                        PeakLevel = 0.32f,
+                        CapturedAtUtc = DateTimeOffset.UtcNow
+                    }
+                ]
+            }));
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        await harness.Service.RunDetectionAsync(CancellationToken.None);
+        var log = ReadSharedText(harness.LogPath);
+
+        Assert.Contains("sessionId=audio-session-id", log);
+        Assert.Contains("endpointId=\"endpoint-123\"", log);
+        Assert.Contains("friendlyName=\"VoiceMeeter Input\"", log);
+        Assert.Contains("displayName=\"Firefox Media Session\"", log);
     }
 
     [Fact]
@@ -963,6 +1098,13 @@ public sealed class BridgeServiceBehaviorTests
         Assert.Equal("itunes_search", state.NowPlaying.MetadataSource);
     }
 
+    private static string ReadSharedText(string path)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    }
+
     private sealed class BridgeServiceHarness : IDisposable
     {
         private readonly string _tempDir;
@@ -1016,6 +1158,7 @@ public sealed class BridgeServiceBehaviorTests
         public ConfigurableOverlayCoordinator OverlayCoordinator { get; }
         public RecordingOutputWriter OutputWriter { get; }
         public BridgeService Service { get; }
+        public string LogPath => Path.Combine(_tempDir, "bridge.log");
 
         public void Dispose()
         {

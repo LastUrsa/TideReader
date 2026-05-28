@@ -781,6 +781,136 @@ public sealed class BridgeServiceBehaviorTests
     }
 
     [Fact]
+    public async Task SaveSettingsAsync_PreservesValidOverlaySettings()
+    {
+        using var harness = new BridgeServiceHarness();
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        var state = await harness.Service.SaveSettingsAsync(new Settings
+        {
+            OutputFolder = harness.Settings.OutputFolder,
+            OverlaySettings = new OverlaySettings
+            {
+                SongTextStyle = new OverlayTextStyle
+                {
+                    FontFamily = "Fira Sans",
+                    ColorHex = "#a1b2c3",
+                    FontSizePx = 28,
+                    MaxCharacters = 64,
+                    Bold = true
+                },
+                ArtistTextStyle = new OverlayTextStyle
+                {
+                    FontFamily = "IBM Plex Sans",
+                    ColorHex = "#0f0f0f",
+                    FontSizePx = 16,
+                    MaxCharacters = 42
+                },
+                AlbumTextStyle = new OverlayTextStyle
+                {
+                    FontFamily = "IBM Plex Sans",
+                    ColorHex = "#ffffff",
+                    FontSizePx = 14,
+                    MaxCharacters = 30
+                },
+                ImageSizePx = 72,
+                BackgroundColorHex = "#112233",
+                OverlayContainerStyle = new OverlayContainerStyle
+                {
+                    BackgroundMode = "gradient",
+                    BackgroundColorHex = "",
+                    Gradient = new GradientSettings
+                    {
+                        ColorCount = 2,
+                        Preset = "Soft Radial",
+                        Color1Hex = "#010203",
+                        Color2Hex = "#040506",
+                        Color3Hex = "#070809",
+                        AngleDeg = 180
+                    },
+                    Opacity = 0.42,
+                    CornerRadiusPx = 12,
+                    PaddingPx = 18,
+                    GapPx = 9,
+                    BorderEnabled = true,
+                    BorderColorHex = "#abcdef",
+                    BorderWidthPx = 2
+                },
+                StatusPillStyle = new StatusPillStyle
+                {
+                    BackgroundColorHex = "#123456",
+                    TextColorHex = "#654321",
+                    Opacity = 0.75,
+                    FontFamily = "JetBrains Mono",
+                    FontSizePx = 13,
+                    CornerRadiusPx = 18,
+                    PaddingHorizontalPx = 8,
+                    PaddingVerticalPx = 3
+                },
+                ImagePosition = "Right",
+                TextAlign = "Center",
+                ShowAppName = false,
+                ShowPlaybackState = false,
+                ShowPlaybackProvider = true
+            },
+            BrowserSettings = harness.Settings.BrowserSettings
+        }, CancellationToken.None);
+
+        Assert.Equal("Fira Sans", state.Settings.OverlaySettings.SongTextStyle.FontFamily);
+        Assert.Equal("#A1B2C3", state.Settings.OverlaySettings.SongTextStyle.ColorHex);
+        Assert.Equal(64, state.Settings.OverlaySettings.SongTextStyle.MaxCharacters);
+        Assert.Equal("#112233", state.Settings.OverlaySettings.OverlayContainerStyle.BackgroundColorHex);
+        Assert.Equal("gradient", state.Settings.OverlaySettings.OverlayContainerStyle.BackgroundMode);
+        Assert.Equal(2, state.Settings.OverlaySettings.OverlayContainerStyle.Gradient.ColorCount);
+        Assert.Equal("Soft Radial", state.Settings.OverlaySettings.OverlayContainerStyle.Gradient.Preset);
+        Assert.Equal(180, state.Settings.OverlaySettings.OverlayContainerStyle.Gradient.AngleDeg);
+        Assert.Equal(0.42, state.Settings.OverlaySettings.OverlayContainerStyle.Opacity);
+        Assert.Equal("#ABCDEF", state.Settings.OverlaySettings.OverlayContainerStyle.BorderColorHex);
+        Assert.Equal("JetBrains Mono", state.Settings.OverlaySettings.StatusPillStyle.FontFamily);
+        Assert.Equal("Right", state.Settings.OverlaySettings.ImagePosition);
+        Assert.Equal("Center", state.Settings.OverlaySettings.TextAlign);
+        Assert.False(state.Settings.OverlaySettings.ShowAppName);
+        Assert.False(state.Settings.OverlaySettings.ShowPlaybackState);
+        Assert.True(state.Settings.OverlaySettings.ShowPlaybackProvider);
+    }
+
+    [Fact]
+    public async Task SaveSettingsAsync_RestoresDefaultBrowserPriority_WhenPriorityListIsMissing()
+    {
+        using var harness = new BridgeServiceHarness();
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        var state = await harness.Service.SaveSettingsAsync(new Settings
+        {
+            OutputFolder = harness.Settings.OutputFolder,
+            BrowserSettings = new BrowserSettings
+            {
+                Enabled = true,
+                ActiveSourceMode = "tidal",
+                SupportedBrowsers = new BrowserSupportSettings(),
+                SourcePriority = null!,
+                SourceSwitchCooldownMs = 1500,
+                AllowGenericPlayback = true,
+                PreferTidalOverBrowser = true,
+                MetadataCleanupEnabled = true,
+                BrowserArtworkEnabled = true,
+                YouTubeVideoImageFallbackEnabled = true,
+                IgnorePausedSessions = true,
+                IgnoreStaleSessions = true,
+                StaleSessionAfterSeconds = 15
+            },
+            OverlaySettings = new OverlaySettings()
+        }, CancellationToken.None);
+
+        Assert.Equal("tidal", state.Settings.BrowserSettings.ActiveSourceMode);
+        Assert.Equal(
+            ["tidal", "youtubeMusic", "bandcamp", "soundcloud", "youtube", "genericBrowser"],
+            state.Settings.BrowserSettings.SourcePriority);
+        Assert.Equal(1500, state.Settings.BrowserSettings.SourceSwitchCooldownMs);
+        Assert.Equal(15, state.Settings.BrowserSettings.StaleSessionAfterSeconds);
+    }
+
+    [Fact]
     public async Task RunDetectionAsync_RedactsSensitiveDebugIdentifiers_WhenDeepDiagnosticsAreDisabled()
     {
         using var harness = new BridgeServiceHarness();
@@ -865,6 +995,126 @@ public sealed class BridgeServiceBehaviorTests
         Assert.DoesNotContain("raw-source-app-id", log);
         Assert.DoesNotContain("VoiceMeeter Input", log);
         Assert.DoesNotContain("Firefox Media Session", log);
+    }
+
+    [Fact]
+    public async Task RunDetectionAsync_DoesNotWriteBrowserDebugLogLines_WhenDebugLoggingIsDisabled()
+    {
+        using var harness = new BridgeServiceHarness();
+        harness.PlaybackDetector.Outcomes.Enqueue(new PlaybackDetectionOutcome(
+            null,
+            new BrowserDebugState
+            {
+                RawSessions =
+                [
+                    new RawMediaSessionDebugInfo
+                    {
+                        SessionId = "raw-session-id",
+                        SourceAppId = "raw-source-app-id",
+                        Browser = "firefox",
+                        IsPlaying = true,
+                        LastUpdatedUtc = DateTimeOffset.UtcNow,
+                        Title = "Track",
+                        Artist = "Artist",
+                        Album = "Album"
+                    }
+                ],
+                AudioEndpoints =
+                [
+                    new RawAudioEndpointDebugInfo
+                    {
+                        EndpointId = "endpoint-123",
+                        FriendlyName = "VoiceMeeter Input",
+                        DeviceState = "active",
+                        IsDefaultMultimedia = true
+                    }
+                ],
+                AudioSessions =
+                [
+                    new RawAudioSessionDebugInfo
+                    {
+                        SessionId = "audio-session-id",
+                        EndpointId = "endpoint-123",
+                        ProcessId = 42,
+                        ProcessName = "firefox",
+                        DisplayName = "Firefox Media Session",
+                        State = "Active",
+                        PeakLevel = 0.32f,
+                        CapturedAtUtc = DateTimeOffset.UtcNow
+                    }
+                ]
+            }));
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        await harness.Service.RunDetectionAsync(CancellationToken.None);
+        var log = ReadSharedText(harness.LogPath);
+
+        Assert.DoesNotContain("raw-media-session", log);
+        Assert.DoesNotContain("raw-audio-endpoint", log);
+        Assert.DoesNotContain("raw-audio-session", log);
+        Assert.DoesNotContain("browser-debug", log);
+    }
+
+    [Fact]
+    public async Task RunDetectionAsync_LeavesBlankSensitiveFieldsBlank_WhenDeepDiagnosticsAreDisabled()
+    {
+        using var harness = new BridgeServiceHarness();
+        harness.Settings.BrowserSettings.DebugLoggingEnabled = true;
+        harness.PlaybackDetector.Outcomes.Enqueue(new PlaybackDetectionOutcome(
+            null,
+            new BrowserDebugState
+            {
+                Sessions =
+                [
+                    new BrowserSessionDebugInfo
+                    {
+                        SessionId = "",
+                        Provider = "browser",
+                        Browser = "firefox",
+                        Site = "youtube",
+                        PlaybackState = "playing",
+                        SourceAppId = "",
+                        ParsedArtist = "Artist",
+                        ParsedTitle = "Track",
+                        DecisionReason = "selected"
+                    }
+                ],
+                AudioEndpoints =
+                [
+                    new RawAudioEndpointDebugInfo
+                    {
+                        EndpointId = "",
+                        FriendlyName = "",
+                        DeviceState = "active",
+                        IsDefaultMultimedia = true
+                    }
+                ],
+                AudioSessions =
+                [
+                    new RawAudioSessionDebugInfo
+                    {
+                        SessionId = "",
+                        EndpointId = "",
+                        ProcessId = 42,
+                        ProcessName = "firefox",
+                        DisplayName = "",
+                        State = "Active",
+                        PeakLevel = 0.32f,
+                        CapturedAtUtc = DateTimeOffset.UtcNow
+                    }
+                ]
+            }));
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        await harness.Service.RunDetectionAsync(CancellationToken.None);
+        var log = ReadSharedText(harness.LogPath);
+
+        Assert.Contains("sessionId= provider=browser", log);
+        Assert.Contains("sourceAppId=\"\" parsedArtist=\"Artist\"", log);
+        Assert.Contains("endpointId=\"\" friendlyName=\"\"", log);
+        Assert.Contains("displayName=\"\" state=Active", log);
+        Assert.DoesNotContain("hash:", log);
+        Assert.DoesNotContain("redacted(hash:", log);
     }
 
     [Fact]

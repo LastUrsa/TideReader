@@ -24,7 +24,9 @@ public sealed class OverlayResponseBuilderTests
         Assert.Contains("statusPillStyle", html);
         Assert.Contains("withAlpha", html);
         Assert.Contains("backgroundFromSettings", html);
-        Assert.Contains("reloadOverlayPage", html);
+        Assert.DoesNotContain("reloadOverlayPage", html);
+        Assert.Contains("id=\"cover-shell\" style=\"display:none\"", html);
+        Assert.Contains(">Offline<", html);
         Assert.Contains("Waiting for TideReader", html);
         Assert.Contains("fetch('/nowplaying.json'", html);
     }

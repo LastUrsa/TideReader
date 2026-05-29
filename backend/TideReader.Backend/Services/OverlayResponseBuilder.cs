@@ -230,18 +230,18 @@ internal static class OverlayResponseBuilder
   </head>
   <body>
     <div class="frame" data-image-position="left" data-text-align="left">
-      <div class="cover-shell" id="cover-shell">
+      <div class="cover-shell" id="cover-shell" style="display:none">
         <img id="cover" alt="">
         <span class="cover-placeholder" id="cover-placeholder">ART</span>
       </div>
       <div class="copy">
         <div class="topline" id="topline">
           <div class="brand" id="brand">TideReader</div>
-          <div class="status-pill not_running" id="status">Not running</div>
+          <div class="status-pill not_running" id="status">Offline</div>
         </div>
-        <div class="title" id="title">Waiting for playback</div>
-        <div class="artist" id="artist">Artist unavailable</div>
-        <div class="album" id="album">Album unavailable</div>
+        <div class="title" id="title">Waiting for TideReader</div>
+        <div class="artist" id="artist">Reconnects automatically</div>
+        <div class="album" id="album">OBS source will refresh itself</div>
       </div>
     </div>
     <script>
@@ -527,7 +527,6 @@ internal static class OverlayResponseBuilder
         return next;
       }
 
-      let refreshFailureCount = 0;
       let refreshTimer = 0;
 
       function scheduleRefresh(delayMs) {
@@ -538,17 +537,19 @@ internal static class OverlayResponseBuilder
       function showDisconnectedState() {
         const fallbackSettings = applyOverlaySettings(defaultSettings);
         const statusEl = document.getElementById('status');
+        const cover = document.getElementById('cover');
+        const coverShell = document.getElementById('cover-shell');
+        const placeholder = document.getElementById('cover-placeholder');
         statusEl.textContent = 'Offline';
         statusEl.className = 'status-pill not_running';
         document.getElementById('title').textContent = 'Waiting for TideReader';
         document.getElementById('artist').textContent = truncateText('Reconnects automatically', fallbackSettings.artistTextStyle.maxCharacters, 'Reconnects automatically');
         document.getElementById('album').textContent = truncateText('OBS source will refresh itself', fallbackSettings.albumTextStyle.maxCharacters, 'OBS source will refresh itself');
-      }
-
-      function reloadOverlayPage() {
-        const nextUrl = new URL(window.location.href);
-        nextUrl.searchParams.set('reload', Date.now().toString());
-        window.location.replace(nextUrl.toString());
+        cover.removeAttribute('src');
+        cover.style.display = 'none';
+        coverShell.classList.remove('has-artwork');
+        coverShell.style.display = 'none';
+        placeholder.style.display = 'none';
       }
 
       async function refresh() {
@@ -592,22 +593,14 @@ internal static class OverlayResponseBuilder
             placeholder.style.display = 'none';
           }
 
-          refreshFailureCount = 0;
           scheduleRefresh(1000);
         } catch (error) {
-          refreshFailureCount += 1;
           showDisconnectedState();
-          if (refreshFailureCount >= 5) {
-            reloadOverlayPage();
-            return;
-          }
-
           scheduleRefresh(1000);
         }
       }
 
       window.addEventListener('pageshow', function() {
-        refreshFailureCount = 0;
         scheduleRefresh(0);
       });
 

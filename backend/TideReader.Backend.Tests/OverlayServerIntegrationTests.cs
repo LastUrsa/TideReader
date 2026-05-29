@@ -38,6 +38,7 @@ public sealed class OverlayServerIntegrationTests
             using var client = new HttpClient { BaseAddress = new Uri($"http://127.0.0.1:{port}/") };
 
             var overlayResponse = await client.GetAsync("overlay");
+            var indexResponse = await client.GetAsync("index.html");
             var nowPlaying = await client.GetFromJsonAsync<NowPlayingFile>("nowplaying.json");
             var overlaySettings = await client.GetFromJsonAsync<OverlaySettings>("overlay-settings.json");
             var artworkResponse = await client.GetAsync("cover.jpg");
@@ -45,6 +46,7 @@ public sealed class OverlayServerIntegrationTests
 
             Assert.Equal($"http://127.0.0.1:{port}/overlay", server.Url);
             Assert.Equal(HttpStatusCode.OK, overlayResponse.StatusCode);
+            Assert.Equal(HttpStatusCode.OK, indexResponse.StatusCode);
             Assert.NotNull(overlayResponse.Headers.CacheControl);
             Assert.True(overlayResponse.Headers.CacheControl!.NoStore);
             Assert.True(overlayResponse.Headers.CacheControl.NoCache);
@@ -56,6 +58,8 @@ public sealed class OverlayServerIntegrationTests
             Assert.Equal(HttpStatusCode.OK, artworkResponse.StatusCode);
             Assert.Equal([1, 2, 3], await artworkResponse.Content.ReadAsByteArrayAsync());
             Assert.Equal(HttpStatusCode.NotFound, missingResponse.StatusCode);
+
+            await server.ConfigureAsync(true, port, CancellationToken.None);
 
             await server.ConfigureAsync(false, port, CancellationToken.None);
 

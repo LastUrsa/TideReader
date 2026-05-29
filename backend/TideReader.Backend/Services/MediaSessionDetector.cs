@@ -335,23 +335,7 @@ public sealed class TidalPlaybackProvider : IPlaybackProvider
 
     private static bool IsActiveTidalPlayback(MediaSessionSnapshot snapshot, BrowserSettings settings)
     {
-        if (snapshot.IsPlaying)
-        {
-            return true;
-        }
-
-        if (snapshot.IsPaused)
-        {
-            return false;
-        }
-
-        var hasStructuredMetadata =
-            !string.IsNullOrWhiteSpace(snapshot.Title) ||
-            !string.IsNullOrWhiteSpace(snapshot.Artist) ||
-            !string.IsNullOrWhiteSpace(snapshot.Album);
-
-        return hasStructuredMetadata &&
-            (DateTimeOffset.UtcNow - snapshot.LastUpdatedUtc).TotalSeconds <= settings.StaleSessionAfterSeconds;
+        return snapshot.IsPlaying;
     }
 
     private static int ResolvePriority(string site, BrowserSettings settings)

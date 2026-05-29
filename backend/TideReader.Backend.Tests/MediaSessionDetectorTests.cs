@@ -404,7 +404,7 @@ public sealed class MediaSessionDetectorTests
     }
 
     [Fact]
-    public async Task DetectAsync_PreferTidalOverBrowser_SelectsFreshTidalSession_WhenWindowsStatusIsNotExplicitlyPlaying()
+    public async Task DetectAsync_PreferTidalOverBrowser_DoesNotSelectFreshTidalSession_WhenWindowsStatusIsNotExplicitlyPlaying()
     {
         var settings = new Settings
         {
@@ -445,9 +445,8 @@ public sealed class MediaSessionDetectorTests
         var result = await detector.DetectAsync(new DetectionResult(), settings, CancellationToken.None);
 
         Assert.NotNull(result.Result);
-        Assert.Equal("tidal", result.Result!.Provider);
-        Assert.Equal("playing", result.Result.Status);
-        Assert.Equal("Tidal Track", result.Result.Title);
+        Assert.Equal("browser", result.Result!.Provider);
+        Assert.Equal("Browser Track", result.Result.Title);
     }
 
     [Fact]

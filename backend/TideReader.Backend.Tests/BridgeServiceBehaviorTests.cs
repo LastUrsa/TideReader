@@ -6,6 +6,70 @@ namespace TideReader.Backend.Tests;
 public sealed class BridgeServiceBehaviorTests
 {
     [Fact]
+    public async Task GetState_UsesFallbackAppUpdateChecker_WhenNoCheckerIsProvided()
+    {
+        var tempDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        try
+        {
+            using var logger = new AppLogger(tempDir);
+            var settings = new Settings
+            {
+                OutputFolder = Path.Combine(tempDir, "output"),
+                OverlayEnabled = false,
+                OverlayPort = 17655,
+                PollIntervalMs = 1000,
+                EnableWindowTitleFallback = false,
+                EnableDebugManualInput = false,
+                MetadataProviderMode = nameof(MetadataProviderMode.Off),
+                ThemeMode = nameof(ThemeMode.Dark),
+                OverlaySettings = new OverlaySettings()
+            };
+
+            var service = new BridgeService(
+                new HarnessSettingsStore(settings),
+                logger,
+                new RecordingOutputWriter(),
+                new SequencePlaybackDetector(),
+                new ConfigurableWindowTitleDetector(),
+                new ConfigurableManualDetector(),
+                new ConfigurableMetadataEnricher(),
+                new ConfigurableOverlayCoordinator(),
+                new OverlaySettingsSnapshotStore(),
+                new PlaybackSnapshotStore());
+
+            await service.InitializeAsync(CancellationToken.None);
+            var state = service.GetState();
+
+            Assert.Equal("0.3.1", state.AppVersion);
+        }
+        finally
+        {
+            Directory.Delete(tempDir, true);
+        }
+    }
+
+    [Fact]
+    public async Task FallbackAppUpdateChecker_ReturnsLatestVersionPayload()
+    {
+        var checkerType = typeof(BridgeService).GetNestedType("FallbackAppUpdateChecker", System.Reflection.BindingFlags.NonPublic);
+        Assert.NotNull(checkerType);
+
+        var checker = Activator.CreateInstance(checkerType!) as IAppUpdateChecker;
+        Assert.NotNull(checker);
+
+        var update = await checker!.CheckForUpdatesAsync(CancellationToken.None);
+
+        Assert.Equal("0.3.1", checker.CurrentVersion);
+        Assert.Equal("0.3.1", update.CurrentVersion);
+        Assert.Equal("0.3.1", update.LatestVersion);
+        Assert.Equal("https://github.com/LastUrsa/TideReader/releases", checker.ReleaseUrl);
+        Assert.Equal(checker.ReleaseUrl, update.ReleaseUrl);
+        Assert.Equal("You're running the latest version.", update.Message);
+    }
+
+    [Fact]
     public async Task RunDetectionAsync_UsesWindowTitleFallback_WhenEnabled()
     {
         using var harness = new BridgeServiceHarness();
@@ -52,7 +116,7 @@ public sealed class BridgeServiceBehaviorTests
     }
 
     [Fact]
-    public async Task RunDetectionAsync_UsesRecentGenericTidalWindowTitle_WhenPlaybackJustStartedFromIdle()
+    public async Task RunDetectionAsync_DoesNotUseGenericTidalWindowTitle_WhenPlaybackIsIdle()
     {
         using var harness = new BridgeServiceHarness();
         harness.Settings.EnableWindowTitleFallback = true;
@@ -74,14 +138,13 @@ public sealed class BridgeServiceBehaviorTests
         var state = await harness.Service.RunDetectionAsync(CancellationToken.None);
 
         Assert.Equal("not_running", baselineState.NowPlaying.Status);
-        Assert.Equal("playing", state.NowPlaying.Status);
-        Assert.Equal("tidal", state.NowPlaying.Provider);
-        Assert.Equal("TIDAL", state.NowPlaying.Title);
-        Assert.Equal("selected: recent generic TIDAL window title", state.NowPlaying.SelectionReason);
+        Assert.Equal("not_running", state.NowPlaying.Status);
+        Assert.True(string.IsNullOrWhiteSpace(state.NowPlaying.Title));
+        Assert.True(string.IsNullOrWhiteSpace(state.NowPlaying.Artist));
     }
 
     [Fact]
-    public async Task RunDetectionAsync_UsesPausedTidalMediaSessionMetadata_WhenGenericWindowTitleIsOnlyImmediateSignal()
+    public async Task RunDetectionAsync_DoesNotUsePausedTidalMediaSessionMetadata_WhenGenericWindowTitleIsOnlySignal()
     {
         using var harness = new BridgeServiceHarness();
         harness.Settings.EnableWindowTitleFallback = true;
@@ -124,11 +187,9 @@ public sealed class BridgeServiceBehaviorTests
         var state = await harness.Service.RunDetectionAsync(CancellationToken.None);
 
         Assert.Equal("not_running", baselineState.NowPlaying.Status);
-        Assert.Equal("playing", state.NowPlaying.Status);
-        Assert.Equal("tidal", state.NowPlaying.Provider);
-        Assert.Equal("30/90 (from \"tick, tick... BOOM!\")", state.NowPlaying.Title);
-        Assert.Equal("Ben Visini", state.NowPlaying.Artist);
-        Assert.Equal("selected: generic TIDAL title matched paused media session", state.NowPlaying.SelectionReason);
+        Assert.Equal("not_running", state.NowPlaying.Status);
+        Assert.True(string.IsNullOrWhiteSpace(state.NowPlaying.Title));
+        Assert.True(string.IsNullOrWhiteSpace(state.NowPlaying.Artist));
     }
 
     [Fact]

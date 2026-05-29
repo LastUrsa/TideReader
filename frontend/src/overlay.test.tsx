@@ -363,7 +363,7 @@ describe('NowPlayingOverlayView', () => {
     expect(screen.getByText('Waiting for playback')).toBeInTheDocument();
     expect(screen.getByText('Artist unavailable')).toBeInTheDocument();
     expect(screen.getByText('Album unavailable')).toBeInTheDocument();
-    expect(screen.getByText('Idle')).toBeInTheDocument();
+    expect(screen.queryByText('Idle')).not.toBeInTheDocument();
     expect(screen.queryByText('TideReader')).not.toBeInTheDocument();
     expect(screen.queryByText('Not running')).not.toBeInTheDocument();
   });

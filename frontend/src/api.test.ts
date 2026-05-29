@@ -198,7 +198,7 @@ describe('api', () => {
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
-          currentVersion: '0.3.1',
+          currentVersion: '0.3.2',
           latestVersion: '0.2.1',
           updateAvailable: true,
           releaseUrl: 'https://github.com/LastUrsa/TideReader/releases',

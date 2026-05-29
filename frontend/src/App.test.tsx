@@ -158,7 +158,7 @@ function createState(overrides?: Partial<AppState>): AppState {
       selectionReason: 'selected: highest priority active source',
     },
     outputFolder: 'C:\\Output',
-    appVersion: '0.3.1',
+    appVersion: '0.3.2',
     artworkRevision: 12,
     overlayUrl: 'http://127.0.0.1:17655/overlay',
     logPath: 'C:\\Logs\\bridge.log',
@@ -201,7 +201,7 @@ describe('App', () => {
     apiMocks.openOutputFolder.mockResolvedValue(undefined);
     apiMocks.openReleasePage.mockResolvedValue(undefined);
     apiMocks.checkForUpdates.mockResolvedValue({
-      currentVersion: '0.3.1',
+      currentVersion: '0.3.2',
       latestVersion: '0.2.1',
       updateAvailable: true,
       releaseUrl: 'https://github.com/LastUrsa/TideReader/releases',
@@ -319,7 +319,7 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
 
     expect(screen.getByText('Current version')).toBeInTheDocument();
-    expect(screen.getByText('0.3.1')).toBeInTheDocument();
+    expect(screen.getByText('0.3.2')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Check for Updates' }));
 

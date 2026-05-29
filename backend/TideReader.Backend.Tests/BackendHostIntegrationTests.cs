@@ -128,7 +128,7 @@ public sealed class BackendHostIntegrationTests
         Assert.NotNull(state);
         Assert.True(state!.StartupReady);
         Assert.Equal(@"C:\Temp\TideReaderTests", state.OutputFolder);
-        Assert.Equal("0.3.1", state.AppVersion);
+        Assert.Equal("0.3.2", state.AppVersion);
     }
 
     [Fact]
@@ -140,7 +140,7 @@ public sealed class BackendHostIntegrationTests
         var payload = await client.GetFromJsonAsync<UpdateInfo>("/api/check-for-updates");
 
         Assert.NotNull(payload);
-        Assert.Equal("0.3.1", payload!.CurrentVersion);
+        Assert.Equal("0.3.2", payload!.CurrentVersion);
         Assert.Equal("0.1.1", payload.LatestVersion);
         Assert.True(payload.UpdateAvailable);
     }
@@ -508,7 +508,7 @@ public sealed class BackendHostIntegrationTests
 
     private sealed class HostFakeAppUpdateChecker : IAppUpdateChecker
     {
-        public string CurrentVersion => "0.3.1";
+        public string CurrentVersion => "0.3.2";
         public string ReleaseUrl => "https://github.com/LastUrsa/TideReader/releases";
 
         public Task<UpdateInfo> CheckForUpdatesAsync(CancellationToken cancellationToken) => Task.FromResult(new UpdateInfo

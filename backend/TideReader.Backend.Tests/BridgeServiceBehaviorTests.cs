@@ -42,7 +42,7 @@ public sealed class BridgeServiceBehaviorTests
             await service.InitializeAsync(CancellationToken.None);
             var state = service.GetState();
 
-            Assert.Equal("0.3.1", state.AppVersion);
+            Assert.Equal("0.3.2", state.AppVersion);
         }
         finally
         {
@@ -61,9 +61,9 @@ public sealed class BridgeServiceBehaviorTests
 
         var update = await checker!.CheckForUpdatesAsync(CancellationToken.None);
 
-        Assert.Equal("0.3.1", checker.CurrentVersion);
-        Assert.Equal("0.3.1", update.CurrentVersion);
-        Assert.Equal("0.3.1", update.LatestVersion);
+        Assert.Equal("0.3.2", checker.CurrentVersion);
+        Assert.Equal("0.3.2", update.CurrentVersion);
+        Assert.Equal("0.3.2", update.LatestVersion);
         Assert.Equal("https://github.com/LastUrsa/TideReader/releases", checker.ReleaseUrl);
         Assert.Equal(checker.ReleaseUrl, update.ReleaseUrl);
         Assert.Equal("You're running the latest version.", update.Message);
@@ -1616,7 +1616,7 @@ public sealed class BridgeServiceBehaviorTests
 
     private sealed class StubAppUpdateChecker : IAppUpdateChecker
     {
-        public string CurrentVersion => "0.3.1";
+        public string CurrentVersion => "0.3.2";
         public string ReleaseUrl => "https://github.com/LastUrsa/TideReader/releases";
         public Task<UpdateInfo> CheckForUpdatesAsync(CancellationToken cancellationToken) => Task.FromResult(new UpdateInfo
         {

@@ -139,11 +139,22 @@ public sealed class OverlayServer : IOverlayCoordinator, IDisposable
     private async Task HandleRequestAsync(HttpListenerContext context, CancellationToken cancellationToken)
     {
         var path = context.Request.Url?.AbsolutePath ?? "/";
+        var userAgent = context.Request.UserAgent ?? "";
+        if (path.Equals("/", StringComparison.OrdinalIgnoreCase) ||
+            path.Equals("/overlay", StringComparison.OrdinalIgnoreCase) ||
+            path.Equals("/index.html", StringComparison.OrdinalIgnoreCase) ||
+            path.Equals("/nowplaying.json", StringComparison.OrdinalIgnoreCase) ||
+            path.Equals("/overlay-settings.json", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.Info($"overlay request path={path} userAgent=\"{userAgent}\"");
+        }
+
         var response = OverlayResponseBuilder.Build(path, _snapshotStore, _overlaySettingsSnapshotStore);
         context.Response.StatusCode = response.StatusCode;
         context.Response.Headers["Cache-Control"] = "no-store, no-cache, must-revalidate";
         context.Response.Headers["Pragma"] = "no-cache";
         context.Response.Headers["Expires"] = "0";
+        context.Response.Headers["Access-Control-Allow-Origin"] = "*";
         if (response.Body.Length == 0)
         {
             context.Response.Close();

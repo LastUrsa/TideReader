@@ -9,11 +9,17 @@ internal sealed record OverlayResponse(int StatusCode, string ContentType, byte[
 
 internal static class OverlayResponseBuilder
 {
+    private const string NowPlayingUrlToken = "__NOW_PLAYING_URL__";
+    private const string OverlaySettingsUrlToken = "__OVERLAY_SETTINGS_URL__";
+    private const string CoverUrlToken = "__COVER_URL__";
+
     public static OverlayResponse Build(string path, IPlaybackSnapshotStore snapshotStore, IOverlaySettingsSnapshotStore overlaySettingsSnapshotStore)
     {
-        if (path.Equals("/overlay", StringComparison.OrdinalIgnoreCase))
+        if (path.Equals("/", StringComparison.OrdinalIgnoreCase) ||
+            path.Equals("/overlay", StringComparison.OrdinalIgnoreCase) ||
+            path.Equals("/index.html", StringComparison.OrdinalIgnoreCase))
         {
-            return Text((int)HttpStatusCode.OK, "text/html; charset=utf-8", OverlayHtml);
+            return Text((int)HttpStatusCode.OK, "text/html; charset=utf-8", BuildOverlayHtml("/nowplaying.json", "/overlay-settings.json", "/cover.jpg"));
         }
 
         if (path.Equals("/nowplaying.json", StringComparison.OrdinalIgnoreCase))
@@ -44,7 +50,26 @@ internal static class OverlayResponseBuilder
     private static OverlayResponse Text(int statusCode, string contentType, string body) =>
         new(statusCode, contentType, Encoding.UTF8.GetBytes(body));
 
-    public const string OverlayHtml = """
+    public static string BuildStandaloneHtml(int port)
+    {
+        var effectivePort = port > 0 ? port : 17655;
+        return BuildOverlayHtml(
+            $"http://127.0.0.1:{effectivePort}/nowplaying.json",
+            $"http://127.0.0.1:{effectivePort}/overlay-settings.json",
+            $"http://127.0.0.1:{effectivePort}/cover.jpg");
+    }
+
+    public static string BuildOverlayHtml(string nowPlayingUrl, string overlaySettingsUrl, string coverUrl) =>
+        OverlayHtmlTemplate
+            .Replace(NowPlayingUrlToken, EscapeJavaScriptString(nowPlayingUrl), StringComparison.Ordinal)
+            .Replace(OverlaySettingsUrlToken, EscapeJavaScriptString(overlaySettingsUrl), StringComparison.Ordinal)
+            .Replace(CoverUrlToken, EscapeJavaScriptString(coverUrl), StringComparison.Ordinal);
+
+    private static string EscapeJavaScriptString(string value) =>
+        value.Replace("\\", "\\\\", StringComparison.Ordinal)
+            .Replace("'", "\\'", StringComparison.Ordinal);
+
+    private const string OverlayHtmlTemplate = """
 <!doctype html>
 <html lang="en">
   <head>
@@ -502,50 +527,91 @@ internal static class OverlayResponseBuilder
         return next;
       }
 
-      async function refresh() {
-        const [nowPlayingResponse, settingsResponse] = await Promise.all([
-          fetch('/nowplaying.json', { cache: 'no-store' }),
-          fetch('/overlay-settings.json', { cache: 'no-store' })
-        ]);
+      let refreshFailureCount = 0;
+      let refreshTimer = 0;
 
-        const data = await nowPlayingResponse.json();
-        const settings = settingsResponse.ok
-          ? await settingsResponse.json()
-          : defaultSettings;
-        const activeSettings = applyOverlaySettings(settings);
-        const status = String(data.status || 'not_running');
+      function scheduleRefresh(delayMs) {
+        window.clearTimeout(refreshTimer);
+        refreshTimer = window.setTimeout(refresh, delayMs);
+      }
+
+      function showDisconnectedState() {
+        const fallbackSettings = applyOverlaySettings(defaultSettings);
         const statusEl = document.getElementById('status');
-        statusEl.textContent = formatStatus(status);
-        statusEl.className = 'status-pill ' + status;
-        document.getElementById('title').textContent = truncateText(data.title, activeSettings.songTextStyle.maxCharacters, 'Waiting for playback');
-        document.getElementById('artist').textContent = truncateText(getArtistDisplayText(data, 'Artist unavailable'), activeSettings.artistTextStyle.maxCharacters, 'Artist unavailable');
-        document.getElementById('album').textContent = truncateText(getAlbumDisplayText(data, 'Album unavailable'), activeSettings.albumTextStyle.maxCharacters, 'Album unavailable');
+        statusEl.textContent = 'Offline';
+        statusEl.className = 'status-pill not_running';
+        document.getElementById('title').textContent = 'Waiting for TideReader';
+        document.getElementById('artist').textContent = truncateText('Reconnects automatically', fallbackSettings.artistTextStyle.maxCharacters, 'Reconnects automatically');
+        document.getElementById('album').textContent = truncateText('OBS source will refresh itself', fallbackSettings.albumTextStyle.maxCharacters, 'OBS source will refresh itself');
+      }
 
-        const cover = document.getElementById('cover');
-        const coverShell = document.getElementById('cover-shell');
-        const placeholder = document.getElementById('cover-placeholder');
-        if (data.artworkPath) {
-          cover.src = '/cover.jpg?ts=' + Date.now();
-          cover.style.display = '';
-          coverShell.classList.add('has-artwork');
-          coverShell.style.display = '';
-          placeholder.style.display = 'none';
-        } else if (isMetadataLimitedBrowserSession(data)) {
-          cover.removeAttribute('src');
-          cover.style.display = 'none';
-          coverShell.classList.remove('has-artwork');
-          coverShell.style.display = 'none';
-          placeholder.style.display = 'none';
-        } else {
-          cover.removeAttribute('src');
-          cover.style.display = '';
-          coverShell.classList.remove('has-artwork');
-          coverShell.style.display = '';
-          placeholder.style.display = '';
+      function reloadOverlayPage() {
+        const nextUrl = new URL(window.location.href);
+        nextUrl.searchParams.set('reload', Date.now().toString());
+        window.location.replace(nextUrl.toString());
+      }
+
+      async function refresh() {
+        try {
+          const [nowPlayingResponse, settingsResponse] = await Promise.all([
+            fetch('__NOW_PLAYING_URL__', { cache: 'reload' }),
+            fetch('__OVERLAY_SETTINGS_URL__', { cache: 'reload' })
+          ]);
+
+          if (!nowPlayingResponse.ok) {
+            throw new Error('now playing fetch failed with ' + nowPlayingResponse.status);
+          }
+
+          const data = await nowPlayingResponse.json();
+          const settings = settingsResponse.ok
+            ? await settingsResponse.json()
+            : defaultSettings;
+          const activeSettings = applyOverlaySettings(settings);
+          const status = String(data.status || 'not_running');
+          const statusEl = document.getElementById('status');
+          statusEl.textContent = formatStatus(status);
+          statusEl.className = 'status-pill ' + status;
+          document.getElementById('title').textContent = truncateText(data.title, activeSettings.songTextStyle.maxCharacters, 'Waiting for playback');
+          document.getElementById('artist').textContent = truncateText(getArtistDisplayText(data, 'Artist unavailable'), activeSettings.artistTextStyle.maxCharacters, 'Artist unavailable');
+          document.getElementById('album').textContent = truncateText(getAlbumDisplayText(data, 'Album unavailable'), activeSettings.albumTextStyle.maxCharacters, 'Album unavailable');
+
+          const cover = document.getElementById('cover');
+          const coverShell = document.getElementById('cover-shell');
+          const placeholder = document.getElementById('cover-placeholder');
+          if (data.artworkPath) {
+            cover.src = '__COVER_URL__?ts=' + Date.now();
+            cover.style.display = '';
+            coverShell.classList.add('has-artwork');
+            coverShell.style.display = '';
+            placeholder.style.display = 'none';
+          } else {
+            cover.removeAttribute('src');
+            cover.style.display = 'none';
+            coverShell.classList.remove('has-artwork');
+            coverShell.style.display = 'none';
+            placeholder.style.display = 'none';
+          }
+
+          refreshFailureCount = 0;
+          scheduleRefresh(1000);
+        } catch (error) {
+          refreshFailureCount += 1;
+          showDisconnectedState();
+          if (refreshFailureCount >= 5) {
+            reloadOverlayPage();
+            return;
+          }
+
+          scheduleRefresh(1000);
         }
       }
-      refresh();
-      setInterval(refresh, 1000);
+
+      window.addEventListener('pageshow', function() {
+        refreshFailureCount = 0;
+        scheduleRefresh(0);
+      });
+
+      scheduleRefresh(0);
     </script>
   </body>
 </html>

@@ -346,7 +346,7 @@ export function getAlbumDisplayText(nowPlaying: DetectionResult, fallback: strin
 }
 
 export function shouldHideArtworkFallback(nowPlaying: DetectionResult): boolean {
-  return isMetadataLimitedBrowserSession(nowPlaying);
+  return nowPlaying.status === 'not_running' || isMetadataLimitedBrowserSession(nowPlaying);
 }
 
 export function withAlpha(hexColor: string, opacity: number): string {

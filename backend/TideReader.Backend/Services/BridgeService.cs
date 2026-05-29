@@ -422,6 +422,12 @@ public sealed class BridgeService
             return null;
         }
 
+        if (!string.Equals(previous.Provider, "tidal", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(previous.Status, "playing", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
         if (string.Equals(previous.Provider, "tidal", StringComparison.OrdinalIgnoreCase) &&
             string.Equals(previous.Method, "window_title", StringComparison.OrdinalIgnoreCase) &&
             IsActionableWindowTitleTidal(previous))
@@ -485,6 +491,7 @@ public sealed class BridgeService
 
         var hintedSession = debugState.Sessions
             .Where(session => string.Equals(session.Provider, "tidal", StringComparison.OrdinalIgnoreCase))
+            .Where(session => string.Equals(session.PlaybackState, "playing", StringComparison.OrdinalIgnoreCase))
             .Where(session => !string.IsNullOrWhiteSpace(session.ParsedTitle) || !string.IsNullOrWhiteSpace(session.ParsedArtist))
             .OrderByDescending(session => session.LastUpdatedUtc)
             .ThenByDescending(session => session.Confidence)
@@ -1045,6 +1052,7 @@ public sealed class BridgeService
         }
 
         await _overlayServer.ConfigureAsync(snapshot.OverlayEnabled, snapshot.OverlayPort, cancellationToken);
+        OverlayStaticFileWriter.Write(snapshot.OutputFolder, snapshot.OverlayPort);
     }
 
     private static MetadataProviderMode ParseMetadataProviderMode(string value) =>

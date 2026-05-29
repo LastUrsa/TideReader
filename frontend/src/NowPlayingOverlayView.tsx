@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react';
 import type { DetectionResult, OverlaySettings } from './api';
-import { formatPlaybackStatus, getAlbumDisplayText, getArtistDisplayText, getOverlayContainerBackground, shouldHideArtworkFallback, truncateOverlayText, withAlpha } from './overlay';
+import { formatPlaybackStatus, getAlbumDisplayText, getArtistDisplayText, getOverlayContainerBackground, truncateOverlayText, withAlpha } from './overlay';
 
 type NowPlayingOverlayViewProps = {
   overlaySettings: OverlaySettings;
@@ -43,7 +43,7 @@ export default function NowPlayingOverlayView({
   const artworkFallbackLabel = fallbackMode === 'app'
     ? (nowPlaying.title ? nowPlaying.source || 'Browser' : 'Idle')
     : 'ART';
-  const hideArtworkFallback = !hasArtwork && fallbackMode === 'app' && shouldHideArtworkFallback(nowPlaying);
+  const hideArtworkFallback = !hasArtwork && fallbackMode === 'app';
 
   return (
     <section

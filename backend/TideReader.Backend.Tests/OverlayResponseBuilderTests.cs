@@ -24,6 +24,21 @@ public sealed class OverlayResponseBuilderTests
         Assert.Contains("statusPillStyle", html);
         Assert.Contains("withAlpha", html);
         Assert.Contains("backgroundFromSettings", html);
+        Assert.Contains("reloadOverlayPage", html);
+        Assert.Contains("Waiting for TideReader", html);
+        Assert.Contains("fetch('/nowplaying.json'", html);
+    }
+
+    [Theory]
+    [InlineData("/")]
+    [InlineData("/index.html")]
+    public void Build_ReturnsHtml_ForOverlayAliases(string path)
+    {
+        var response = OverlayResponseBuilder.Build(path, new PlaybackSnapshotStore(), new OverlaySettingsSnapshotStore());
+
+        Assert.Equal(200, response.StatusCode);
+        Assert.Equal("text/html; charset=utf-8", response.ContentType);
+        Assert.NotEmpty(response.Body);
     }
 
     [Fact]
@@ -124,5 +139,23 @@ public sealed class OverlayResponseBuilderTests
         Assert.Equal(8, payload.AlbumTextStyle.MaxCharacters);
         Assert.False(payload.ShowAppName);
         Assert.False(payload.ShowPlaybackState);
+    }
+
+    [Fact]
+    public void BuildStandaloneHtml_UsesAbsoluteOverlayApiUrls()
+    {
+        var html = OverlayResponseBuilder.BuildStandaloneHtml(17655);
+
+        Assert.Contains("fetch('http://127.0.0.1:17655/nowplaying.json'", html);
+        Assert.Contains("fetch('http://127.0.0.1:17655/overlay-settings.json'", html);
+        Assert.Contains("cover.src = 'http://127.0.0.1:17655/cover.jpg?ts=' + Date.now();", html);
+    }
+
+    [Fact]
+    public void BuildStandaloneHtml_FallsBackToDefaultPort_WhenPortIsNotPositive()
+    {
+        var html = OverlayResponseBuilder.BuildStandaloneHtml(0);
+
+        Assert.Contains("http://127.0.0.1:17655/nowplaying.json", html);
     }
 }

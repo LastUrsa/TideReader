@@ -117,7 +117,6 @@ describe('api', () => {
         textAlign: 'Left',
         showAppName: true,
         showPlaybackState: true,
-        showPlaybackProvider: false,
       },
       browserSettings: {
         enabled: true,

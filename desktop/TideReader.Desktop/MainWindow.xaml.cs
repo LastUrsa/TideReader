@@ -12,10 +12,10 @@ public partial class MainWindow : Window
     private const double CompactHeight = 250;
     private const double CompactMinWidth = 470;
     private const double CompactMinHeight = 220;
-    private const double SettingsWidth = 820;
-    private const double SettingsHeight = 820;
-    private const double SettingsMinWidth = 720;
-    private const double SettingsMinHeight = 760;
+    private const double SettingsWidth = 1024;
+    private const double SettingsHeight = 736;
+    private const double SettingsMinWidth = 900;
+    private const double SettingsMinHeight = 680;
 
     private readonly HashSet<string> _allowedOrigins = new(StringComparer.OrdinalIgnoreCase);
     private static readonly JsonSerializerOptions WebMessageJsonOptions = new()

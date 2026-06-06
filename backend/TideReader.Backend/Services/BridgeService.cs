@@ -1072,8 +1072,7 @@ public sealed class BridgeService
         ImagePosition = settings.ImagePosition,
         TextAlign = settings.TextAlign,
         ShowAppName = settings.ShowAppName,
-        ShowPlaybackState = settings.ShowPlaybackState,
-        ShowPlaybackProvider = settings.ShowPlaybackProvider
+        ShowPlaybackState = settings.ShowPlaybackState
     };
 
     private static BrowserSettings CloneBrowserSettings(BrowserSettings settings) => new()

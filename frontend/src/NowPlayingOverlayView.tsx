@@ -94,7 +94,6 @@ export default function NowPlayingOverlayView({
                 {formatPlaybackStatus(status)}
               </div>
             ) : null}
-            {overlaySettings.showPlaybackProvider ? <div className="np-overlay-brand">{nowPlaying.source || 'TideReader'}</div> : null}
           </div>
         ) : null}
         <h1 className="np-overlay-title" style={textStyleToCss(overlaySettings.songTextStyle)}>

@@ -110,7 +110,6 @@ function createState(overrides?: Partial<AppState>): AppState {
         textAlign: 'Left',
         showAppName: true,
         showPlaybackState: true,
-        showPlaybackProvider: false,
       },
       browserSettings: {
         enabled: true,
@@ -248,8 +247,30 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
     expect(postMessage).toHaveBeenCalledWith({ type: 'layout', mode: 'settings' });
 
-    fireEvent.click(screen.getAllByRole('button', { name: 'Close' })[0]);
+    fireEvent.click(screen.getByRole('button', { name: 'Close settings' }));
     expect(postMessage).toHaveBeenCalledWith({ type: 'layout', mode: 'compact' });
+  });
+
+  it('keeps the compact shell focused on product branding and playback status', async () => {
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Sample Track' });
+
+    expect(screen.getByText('Starsong Tools')).toBeInTheDocument();
+    expect(screen.getByText('TideReader')).toBeInTheDocument();
+    expect(screen.getByText('Playing')).toBeInTheDocument();
+    expect(screen.queryByText('Overlay On')).not.toBeInTheDocument();
+    expect(screen.queryByText('Update Available')).not.toBeInTheDocument();
+    expect(screen.queryByText('v0.3.2')).not.toBeInTheDocument();
+  });
+
+  it('shows a top-right close button in settings', async () => {
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Sample Track' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+
+    expect(screen.getByRole('button', { name: 'Close settings' })).toBeInTheDocument();
   });
 
   it('falls back to placeholders when artwork is unavailable', async () => {
@@ -402,26 +423,28 @@ describe('App', () => {
     fireEvent.change(screen.getAllByLabelText('Font family')[0], {
       target: { value: 'Arial' },
     });
-    fireEvent.change(screen.getAllByLabelText('Hex color')[0], {
+    fireEvent.change(screen.getByLabelText('Hex color'), {
       target: { value: '#112233' },
     });
     fireEvent.change(screen.getAllByLabelText('Font size (px)')[0], {
       target: { value: '30' },
     });
-    fireEvent.change(screen.getAllByLabelText('Character limit')[0], {
+    fireEvent.change(screen.getByLabelText('Character limit'), {
       target: { value: '18' },
     });
-    fireEvent.change(screen.getAllByLabelText('Font family')[1], {
+    fireEvent.click(screen.getByRole('tab', { name: 'Artist' }));
+    fireEvent.change(screen.getAllByLabelText('Font family')[0], {
       target: { value: 'Tahoma' },
     });
-    fireEvent.change(screen.getAllByLabelText('Character limit')[1], {
+    fireEvent.change(screen.getByLabelText('Character limit'), {
       target: { value: '12' },
     });
-    fireEvent.click(screen.getAllByLabelText('Italic')[1]);
-    fireEvent.change(screen.getAllByLabelText('Character limit')[2], {
+    fireEvent.click(screen.getAllByLabelText('Italic')[0]);
+    fireEvent.click(screen.getByRole('tab', { name: 'Album' }));
+    fireEvent.change(screen.getByLabelText('Character limit'), {
       target: { value: '8' },
     });
-    fireEvent.click(screen.getAllByLabelText('Underline')[2]);
+    fireEvent.click(screen.getAllByLabelText('Underline')[0]);
     fireEvent.change(screen.getByLabelText('Artwork image size (px)'), {
       target: { value: '92' },
     });
@@ -673,10 +696,10 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('Text color'), {
       target: { value: '#C0FFEE' },
     });
-    fireEvent.change(screen.getAllByLabelText('Font family')[3], {
+    fireEvent.change(screen.getAllByLabelText('Font family')[1], {
       target: { value: 'Arial' },
     });
-    fireEvent.change(screen.getAllByLabelText('Font size (px)')[3], {
+    fireEvent.change(screen.getAllByLabelText('Font size (px)')[1], {
       target: { value: '14' },
     });
     fireEvent.change(screen.getAllByLabelText('Corner radius (px)')[1], {
@@ -688,13 +711,11 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('Vertical padding (px)'), {
       target: { value: '6' },
     });
-    fireEvent.click(screen.getAllByLabelText('Bold')[3]);
-    fireEvent.click(screen.getAllByLabelText('Italic')[3]);
-    fireEvent.click(screen.getAllByLabelText('Underline')[3]);
+    fireEvent.click(screen.getAllByLabelText('Bold')[1]);
+    fireEvent.click(screen.getAllByLabelText('Italic')[1]);
+    fireEvent.click(screen.getAllByLabelText('Underline')[1]);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Live Preview' }));
-    expect(screen.queryByText('Sample Song')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Live Preview' }));
+    expect(screen.getByText('Live Preview')).toBeInTheDocument();
     expect(screen.getAllByText('Sample Track').length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
@@ -973,6 +994,22 @@ describe('App', () => {
     expect(screen.getAllByText('Artist unavailable').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Album unavailable').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Not running').length).toBeGreaterThan(0);
+  });
+
+  it('shows an unsaved changes indicator after editing settings and clears it after save', async () => {
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Sample Track' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+
+    expect(screen.queryByText('Unsaved changes')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText('Enable window title fallback'));
+    expect(screen.getByText('Unsaved changes')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+
+    await waitFor(() => expect(screen.queryByText('Unsaved changes')).not.toBeInTheDocument());
   });
 
   it('falls back to text when the artwork image fails to load', async () => {

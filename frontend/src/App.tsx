@@ -1,10 +1,13 @@
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import './App.css';
+import tideReaderIcon from './assets/images/TideReaderIcon.png';
 import NowPlayingOverlayView from './NowPlayingOverlayView';
 import { AppState, DetectionResult, GradientSettings, OverlayTextStyle, Settings, UpdateInfo, checkForUpdates as checkForUpdatesApi, chooseOutputFolder as chooseOutputFolderApi, getArtworkUrl, getState, getSystemFonts, openOutputFolder as openOutputFolderApi, openReleasePage as openReleasePageApi, runDetectionNow as runDetectionNowApi, saveSettings as saveSettingsApi } from './api';
 import { cloneOverlaySettings, createDefaultSettings, defaultOverlaySettings, formatPlaybackStatus, getAlbumDisplayText, getArtistDisplayText, getGradientPresetOptions, gradientColorCountOptions, isGradientAngleValid, isOpacityValid, isPositiveNumber, isValidHexColor, isZeroOrPositiveNumber, overlayBackgroundModeOptions, overlaySettingsHaveErrors, overlayTextStyleHasErrors, shouldHideArtworkFallback } from './overlay';
 
 type SettingsTab = 'general' | 'browser' | 'overlay';
+type OverlayTextTarget = 'song' | 'artist' | 'album';
+type FeedbackTone = 'success' | 'warning' | 'danger' | 'info';
 
 const emptyState: AppState = {
   settings: createDefaultSettings(),
@@ -128,6 +131,10 @@ function updateGradientColorCount(
   });
 }
 
+function settingsEqual(left: Settings, right: Settings): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 function App() {
   const [state, setState] = useState<AppState>(emptyState);
   const [draft, setDraft] = useState<Settings>(emptyState.settings);
@@ -140,24 +147,60 @@ function App() {
   const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
   const [updateBusy, setUpdateBusy] = useState(false);
   const [updateError, setUpdateError] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [shellFeedback, setShellFeedback] = useState<{ tone: FeedbackTone; message: string } | null>(null);
+  const [activeTextStyleTarget, setActiveTextStyleTarget] = useState<OverlayTextTarget>('song');
   const [overlaySections, setOverlaySections] = useState({
     behavior: true,
     textStyling: true,
     artwork: true,
     container: true,
     statusPill: true,
-    livePreview: true,
   });
   const settingsOpenRef = useRef(settingsOpen);
   const copiedUrlTimerRef = useRef<number | null>(null);
+  const shellFeedbackTimerRef = useRef<number | null>(null);
   const artworkUrl = state.nowPlaying.artworkPath ? getArtworkUrl(state.artworkRevision) : '';
   const hasArtwork = Boolean(artworkUrl) && !artworkFailed;
   const hideArtworkFallback = !hasArtwork && shouldHideArtworkFallback(state.nowPlaying);
   const effectiveThemeMode = settingsOpen ? draft.themeMode : state.settings.themeMode;
   const hasOverlayErrors = overlaySettingsHaveErrors(draft);
+  const hasUnsavedChanges = !settingsEqual(draft, state.settings);
   const previewNowPlaying: DetectionResult = state.nowPlaying;
   const previewArtworkUrl = state.nowPlaying.artworkPath && !artworkFailed ? artworkUrl : '';
   const gradientPresetOptions = getGradientPresetOptions(draft.overlaySettings.overlayContainerStyle.gradient.colorCount);
+  const activeTextStyleLabel = activeTextStyleTarget === 'song'
+    ? 'Song'
+    : activeTextStyleTarget === 'artist'
+      ? 'Artist'
+      : 'Album';
+  const activeTextStyleValue = activeTextStyleTarget === 'song'
+    ? draft.overlaySettings.songTextStyle
+    : activeTextStyleTarget === 'artist'
+      ? draft.overlaySettings.artistTextStyle
+      : draft.overlaySettings.albumTextStyle;
+  const updateActiveTextStyle = (value: OverlayTextStyle) => {
+    setDraft({
+      ...draft,
+      overlaySettings: {
+        ...draft.overlaySettings,
+        songTextStyle: activeTextStyleTarget === 'song' ? value : draft.overlaySettings.songTextStyle,
+        artistTextStyle: activeTextStyleTarget === 'artist' ? value : draft.overlaySettings.artistTextStyle,
+        albumTextStyle: activeTextStyleTarget === 'album' ? value : draft.overlaySettings.albumTextStyle,
+      },
+    });
+  };
+
+  const showShellFeedback = (tone: FeedbackTone, message: string) => {
+    setShellFeedback({ tone, message });
+    if (shellFeedbackTimerRef.current !== null) {
+      window.clearTimeout(shellFeedbackTimerRef.current);
+    }
+    shellFeedbackTimerRef.current = window.setTimeout(() => {
+      setShellFeedback(null);
+      shellFeedbackTimerRef.current = null;
+    }, 2800);
+  };
 
   useEffect(() => {
     settingsOpenRef.current = settingsOpen;
@@ -219,14 +262,21 @@ function App() {
     if (copiedUrlTimerRef.current !== null) {
       window.clearTimeout(copiedUrlTimerRef.current);
     }
+    if (shellFeedbackTimerRef.current !== null) {
+      window.clearTimeout(shellFeedbackTimerRef.current);
+    }
   }, []);
 
   const saveSettings = async () => {
     setSaving(true);
+    setSaveError('');
     try {
       const nextState = await saveSettingsApi(draft);
       setState(nextState);
+      showShellFeedback('success', 'Settings saved.');
       closeSettings();
+    } catch (error) {
+      setSaveError(`Settings could not be saved: ${String(error)}`);
     } finally {
       setSaving(false);
     }
@@ -234,11 +284,15 @@ function App() {
 
   const openSettings = () => {
     setActiveTab('general');
+    setActiveTextStyleTarget('song');
+    setSaveError('');
     setSettingsOpen(true);
   };
 
   const closeSettings = () => {
     setActiveTab('general');
+    setActiveTextStyleTarget('song');
+    setSaveError('');
     setSettingsOpen(false);
   };
 
@@ -282,6 +336,7 @@ function App() {
   const copyOverlayUrl = async () => {
     await copyText(state.overlayUrl);
     setCopiedOverlayUrl(true);
+    showShellFeedback('info', 'Overlay URL copied.');
     if (copiedUrlTimerRef.current !== null) {
       window.clearTimeout(copiedUrlTimerRef.current);
     }
@@ -293,11 +348,22 @@ function App() {
       <main className="overlay-shell">
         <section className="app-chrome">
           <div className="app-chrome-title">
-            <p className="app-name">TideReader</p>
-            <div className={`status-pill ${state.nowPlaying.status}`}>{formatPlaybackStatus(state.nowPlaying.status)}</div>
+            <img className="product-logo" src={tideReaderIcon} alt="" aria-hidden="true" />
+            <div className="product-copy">
+              <p className="suite-label">Starsong Tools</p>
+              <div className="product-line">
+                <p className="app-name">TideReader</p>
+              </div>
+            </div>
           </div>
-          <button className="ghost chrome-button" onClick={openSettings}>Settings</button>
+          <div className="app-chrome-actions">
+            <div className="shell-status-group" aria-label="Playback status">
+              <div className={`status-pill ${state.nowPlaying.status}`}>{formatPlaybackStatus(state.nowPlaying.status)}</div>
+            </div>
+            <button className="button-secondary chrome-button" onClick={openSettings}>Settings</button>
+          </div>
         </section>
+        {shellFeedback ? <div className={`shell-banner ${shellFeedback.tone}`}>{shellFeedback.message}</div> : null}
         <section className="overlay-panel">
           {!hideArtworkFallback ? (
             <div className={`overlay-art ${hasArtwork ? 'has-artwork' : ''}`} style={{ borderRadius: 0 }}>
@@ -322,19 +388,32 @@ function App() {
             {state.nowPlaying.selectionReason ? <p className="album-line">{state.nowPlaying.selectionReason}</p> : null}
           </div>
           <div className="overlay-actions">
-            <button className="ghost compact-button" onClick={runNow}>Refresh</button>
+            <button className="button-secondary compact-button" onClick={runNow}>Refresh</button>
           </div>
         </section>
+        <footer className="shell-footer">
+          <span className="shell-footer-item">{state.statusMessage || 'Waiting for status'}</span>
+          <span className="shell-footer-item">{state.outputFolder ? `Output: ${state.outputFolder}` : 'Output folder not set'}</span>
+        </footer>
       </main>
 
       {settingsOpen ? (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="settings-title">
           <section className="modal-panel">
             <div className="panel-head">
-              <h2 id="settings-title">Settings</h2>
-              <div className="row">
-                <button className="ghost" onClick={closeSettings}>Close</button>
+              <div>
+                <h2 id="settings-title">Settings</h2>
+                <p className="panel-subtitle">Tune playback detection, outputs, and overlay presentation for this TideReader workspace.</p>
               </div>
+              <button
+                className="button-ghost modal-close-button"
+                type="button"
+                aria-label="Close settings"
+                title="Close settings"
+                onClick={closeSettings}
+              >
+                X
+              </button>
             </div>
             <div className="settings-tabs" role="tablist" aria-label="Settings sections">
               <button className={`tab-button ${activeTab === 'general' ? 'active' : ''}`} role="tab" aria-selected={activeTab === 'general'} onClick={() => setActiveTab('general')}>General</button>
@@ -342,25 +421,40 @@ function App() {
               <button className={`tab-button ${activeTab === 'overlay' ? 'active' : ''}`} role="tab" aria-selected={activeTab === 'overlay'} onClick={() => setActiveTab('overlay')}>Overlay</button>
             </div>
             {activeTab === 'general' ? (
-              <>
-                <div className="field">
+              <div className="settings-stack settings-tab-panel">
+                <p className="tab-intro">App behavior, folders, updates, and launch preferences.</p>
+                <div className="field field-span-full">
                   <label>Output folder</label>
-                  <div className="row">
+                  <div className="row row-wrap">
                     <input
+                      className="field-control field-control-full"
                       title={draft.outputFolder || 'Not set'}
                       value={draft.outputFolder}
                       onChange={(event) => setDraft({ ...draft, outputFolder: event.target.value })}
                     />
-                    <button className="ghost" onClick={chooseOutputFolder}>Browse</button>
-                  </div>
-                  <div className="row">
-                    <button className="ghost" onClick={openOutputFolder}>Open output folder</button>
+                    <button className="button-secondary" onClick={chooseOutputFolder}>Browse</button>
+                    <button className="button-ghost" onClick={openOutputFolder}>Open output folder</button>
                   </div>
                 </div>
-                <div className="field-grid">
-                  <label>
+                <div className="field-grid settings-grid settings-grid-general">
+                  <label className="field-span-compact">
                     Poll interval (ms)
-                    <input type="number" value={draft.pollIntervalMs} onChange={(event) => setDraft({ ...draft, pollIntervalMs: Number(event.target.value) })} />
+                    <input className="field-control field-control-compact" type="number" value={draft.pollIntervalMs} onChange={(event) => setDraft({ ...draft, pollIntervalMs: Number(event.target.value) })} />
+                  </label>
+                  <label className="field-span-medium">
+                    <span>Theme mode</span>
+                    <select className="field-control field-control-medium" value={draft.themeMode} onChange={(event) => setDraft({ ...draft, themeMode: event.target.value as Settings['themeMode'] })}>
+                      <option value="Dark">Dark</option>
+                      <option value="Light">Light</option>
+                    </select>
+                  </label>
+                  <label className="field-span-large">
+                    <span>Metadata provider mode</span>
+                    <select className="field-control field-control-large" value={draft.metadataProviderMode} onChange={(event) => setDraft({ ...draft, metadataProviderMode: event.target.value as Settings['metadataProviderMode'] })}>
+                      <option value="Off">Off</option>
+                      <option value="MusicBrainzOnly">MusicBrainz only</option>
+                      <option value="MusicBrainzWithFallbacks">MusicBrainz + fallbacks</option>
+                    </select>
                   </label>
                 </div>
                 <section className="update-panel-wrap">
@@ -370,11 +464,11 @@ function App() {
                       <strong>{state.appVersion || '0.0.0'}</strong>
                     </div>
                     <div className="update-actions">
-                      <button type="button" className="ghost" onClick={checkForUpdates} disabled={updateBusy}>
+                      <button type="button" className="button-secondary" onClick={checkForUpdates} disabled={updateBusy}>
                         {updateBusy ? 'Checking for Updates' : 'Check for Updates'}
                       </button>
                       {updateInfo?.updateAvailable ? (
-                        <button type="button" className="ghost" onClick={openReleasePage}>
+                        <button type="button" className="button-ghost" onClick={openReleasePage}>
                           View Releases
                         </button>
                       ) : null}
@@ -388,31 +482,17 @@ function App() {
                   ) : null}
                   {updateError ? <div className="update-panel error"><strong>{updateError}</strong></div> : null}
                 </section>
-                <label className="field">
-                  <span>Theme mode</span>
-                  <select value={draft.themeMode} onChange={(event) => setDraft({ ...draft, themeMode: event.target.value as Settings['themeMode'] })}>
-                    <option value="Dark">Dark</option>
-                    <option value="Light">Light</option>
-                  </select>
-                </label>
-                <label className="field">
-                  <span>Metadata provider mode</span>
-                  <select value={draft.metadataProviderMode} onChange={(event) => setDraft({ ...draft, metadataProviderMode: event.target.value as Settings['metadataProviderMode'] })}>
-                    <option value="Off">Off</option>
-                    <option value="MusicBrainzOnly">MusicBrainz only</option>
-                    <option value="MusicBrainzWithFallbacks">MusicBrainz + fallbacks</option>
-                  </select>
-                </label>
-                <div className="toggle-list">
+                <div className="toggle-list toggle-grid toggle-grid-wide">
                   <Toggle label="Enable window title fallback" checked={draft.enableWindowTitleFallback} onChange={(value) => setDraft({ ...draft, enableWindowTitleFallback: value })} />
                   <Toggle label="Start minimized" checked={draft.startMinimized} onChange={(value) => setDraft({ ...draft, startMinimized: value })} />
                   <Toggle label="Launch at Windows startup" checked={draft.launchAtStartup} onChange={(value) => setDraft({ ...draft, launchAtStartup: value })} />
                 </div>
-              </>
+              </div>
             ) : activeTab === 'browser' ? (
-              <div className="overlay-settings">
+              <div className="overlay-settings settings-tab-panel">
+                <p className="tab-intro">Browser source detection, filtering, and diagnostics.</p>
                 <CollapsibleSection title="Enable Browser Media Support" isOpen={true} onToggle={() => undefined}>
-                  <div className="toggle-list">
+                  <div className="toggle-list toggle-grid">
                     <Toggle label="Enable browser media support" checked={draft.browserSettings.enabled} onChange={(value) => setDraft({
                       ...draft,
                       browserSettings: {
@@ -424,7 +504,7 @@ function App() {
                 </CollapsibleSection>
 
                 <CollapsibleSection title="Supported Browsers" isOpen={true} onToggle={() => undefined}>
-                  <div className="toggle-list">
+                  <div className="toggle-list toggle-grid toggle-grid-compact">
                     <Toggle label="Chrome" checked={draft.browserSettings.supportedBrowsers.chromeEnabled} onChange={(value) => setDraft({
                       ...draft,
                       browserSettings: {
@@ -464,10 +544,10 @@ function App() {
                 </CollapsibleSection>
 
                 <CollapsibleSection title="Source Selection" isOpen={true} onToggle={() => undefined}>
-                  <div className="field-grid">
-                    <label>
+                  <div className="field-grid settings-grid">
+                    <label className="field-span-medium">
                       Active source mode
-                      <select value={draft.browserSettings.activeSourceMode} onChange={(event) => setDraft({
+                      <select className="field-control field-control-medium" value={draft.browserSettings.activeSourceMode} onChange={(event) => setDraft({
                         ...draft,
                         browserSettings: {
                           ...draft.browserSettings,
@@ -479,9 +559,9 @@ function App() {
                         <option value="browser">Browser only</option>
                       </select>
                     </label>
-                    <label>
+                    <label className="field-span-compact">
                       Source switch cooldown (ms)
-                      <input type="number" value={draft.browserSettings.sourceSwitchCooldownMs} onChange={(event) => setDraft({
+                      <input className="field-control field-control-compact" type="number" value={draft.browserSettings.sourceSwitchCooldownMs} onChange={(event) => setDraft({
                         ...draft,
                         browserSettings: {
                           ...draft.browserSettings,
@@ -490,7 +570,7 @@ function App() {
                       })} />
                     </label>
                   </div>
-                  <div className="toggle-list">
+                  <div className="toggle-list toggle-grid">
                     <Toggle label="Prefer TIDAL over browser playback" checked={draft.browserSettings.preferTidalOverBrowser} onChange={(value) => setDraft({
                       ...draft,
                       browserSettings: {
@@ -509,7 +589,7 @@ function App() {
                 </CollapsibleSection>
 
                 <CollapsibleSection title="Metadata Cleanup" isOpen={true} onToggle={() => undefined}>
-                  <div className="toggle-list">
+                  <div className="toggle-list toggle-grid">
                     <Toggle label="Enable metadata cleanup/parsing" checked={draft.browserSettings.metadataCleanupEnabled} onChange={(value) => setDraft({
                       ...draft,
                       browserSettings: {
@@ -528,7 +608,7 @@ function App() {
                 </CollapsibleSection>
 
                 <CollapsibleSection title="YouTube Artwork" isOpen={true} onToggle={() => undefined}>
-                  <div className="toggle-list">
+                  <div className="toggle-list toggle-grid">
                     <Toggle label="Use browser video image when album art is unavailable" checked={draft.browserSettings.youTubeVideoImageFallbackEnabled} onChange={(value) => setDraft({
                       ...draft,
                       browserSettings: {
@@ -541,10 +621,10 @@ function App() {
                 </CollapsibleSection>
 
                 <CollapsibleSection title="Session Filtering" isOpen={true} onToggle={() => undefined}>
-                  <div className="field-grid">
-                    <label>
+                  <div className="field-grid settings-grid">
+                    <label className="field-span-compact">
                       Stale session timeout (seconds)
-                      <input type="number" value={draft.browserSettings.staleSessionAfterSeconds} onChange={(event) => setDraft({
+                      <input className="field-control field-control-compact" type="number" value={draft.browserSettings.staleSessionAfterSeconds} onChange={(event) => setDraft({
                         ...draft,
                         browserSettings: {
                           ...draft.browserSettings,
@@ -553,7 +633,7 @@ function App() {
                       })} />
                     </label>
                   </div>
-                  <div className="toggle-list">
+                  <div className="toggle-list toggle-grid">
                     <Toggle label="Ignore paused sessions" checked={draft.browserSettings.ignorePausedSessions} onChange={(value) => setDraft({
                       ...draft,
                       browserSettings: {
@@ -572,7 +652,7 @@ function App() {
                 </CollapsibleSection>
 
                 <CollapsibleSection title="Debug" isOpen={true} onToggle={() => undefined}>
-                  <div className="toggle-list">
+                  <div className="toggle-list toggle-grid">
                     <Toggle label="Enable browser detection logging" checked={draft.browserSettings.debugLoggingEnabled} onChange={(value) => setDraft({
                       ...draft,
                       browserSettings: {
@@ -611,33 +691,35 @@ function App() {
                 </CollapsibleSection>
               </div>
             ) : (
-              <div className="overlay-settings">
-                <CollapsibleSection
-                  title="Overlay behavior"
-                  isOpen={overlaySections.behavior}
-                  onToggle={() => setOverlaySections((current) => ({ ...current, behavior: !current.behavior }))}
-                  actions={(
-                    <button
-                      className="ghost compact-button"
-                      onClick={() => setDraft({
+              <div className="overlay-workspace">
+                <div className="overlay-settings overlay-control-pane settings-tab-panel">
+                  <p className="tab-intro">Layout, typography, artwork, and container styling for the overlay.</p>
+                  <CollapsibleSection
+                    title="Overlay behavior"
+                    isOpen={overlaySections.behavior}
+                    onToggle={() => setOverlaySections((current) => ({ ...current, behavior: !current.behavior }))}
+                    actions={(
+                      <button
+                        className="button-ghost compact-button"
+                        onClick={() => setDraft({
+                          ...draft,
+                          overlaySettings: cloneOverlaySettings(defaultOverlaySettings),
+                        })}
+                        type="button"
+                      >
+                        Reset Overlay Styling to Defaults
+                      </button>
+                    )}
+                  >
+                    <div className="toggle-list toggle-grid toggle-grid-wide">
+                      <Toggle label="Enable local overlay" checked={draft.overlayEnabled} onChange={(value) => setDraft({ ...draft, overlayEnabled: value })} />
+                      <Toggle label="Show app name" checked={draft.overlaySettings.showAppName} onChange={(value) => setDraft({
                         ...draft,
-                        overlaySettings: cloneOverlaySettings(defaultOverlaySettings),
-                      })}
-                      type="button"
-                    >
-                      Reset Overlay Styling to Defaults
-                    </button>
-                  )}
-                >
-                  <div className="toggle-list">
-                    <Toggle label="Enable local overlay" checked={draft.overlayEnabled} onChange={(value) => setDraft({ ...draft, overlayEnabled: value })} />
-                    <Toggle label="Show app name" checked={draft.overlaySettings.showAppName} onChange={(value) => setDraft({
-                      ...draft,
-                      overlaySettings: {
-                        ...draft.overlaySettings,
-                        showAppName: value,
-                      },
-                    })} />
+                        overlaySettings: {
+                          ...draft.overlaySettings,
+                          showAppName: value,
+                        },
+                      })} />
                     <Toggle label="Show playback state" checked={draft.overlaySettings.showPlaybackState} onChange={(value) => setDraft({
                       ...draft,
                       overlaySettings: {
@@ -645,492 +727,328 @@ function App() {
                         showPlaybackState: value,
                       },
                     })} />
-                    <Toggle label="Show playback provider" checked={draft.overlaySettings.showPlaybackProvider} onChange={(value) => setDraft({
-                      ...draft,
-                      overlaySettings: {
-                        ...draft.overlaySettings,
-                        showPlaybackProvider: value,
-                      },
-                    })} />
                   </div>
-                  <div className="overlay-behavior-divider" aria-hidden="true" />
-                  <div className="field-grid overlay-dimensions overlay-behavior-grid">
-                    <div className="field inline-field">
-                      <span>Overlay URL</span>
-                      <button
-                        type="button"
-                        className="overlay-url-button"
-                        disabled={!state.overlayUrl}
-                        onClick={copyOverlayUrl}
-                        title={state.overlayUrl || 'Overlay disabled'}
-                      >
-                        <strong>{state.overlayUrl || 'Disabled'}</strong>
-                        {state.overlayUrl ? <span>{copiedOverlayUrl ? 'Copied' : 'Click to copy'}</span> : null}
-                      </button>
+                    <div className="overlay-behavior-divider" aria-hidden="true" />
+                    <div className="field-grid settings-grid overlay-behavior-grid">
+                      <div className="field inline-field field-span-full">
+                        <span>Overlay URL</span>
+                        <button
+                          type="button"
+                          className="overlay-url-button"
+                          disabled={!state.overlayUrl}
+                          onClick={copyOverlayUrl}
+                          title={state.overlayUrl || 'Overlay disabled'}
+                        >
+                          <strong>{state.overlayUrl || 'Disabled'}</strong>
+                          {state.overlayUrl ? <span>{copiedOverlayUrl ? 'Copied' : 'Click to copy'}</span> : null}
+                        </button>
+                      </div>
+                      <label className="field-span-compact">
+                        Overlay port
+                        <input className="field-control field-control-compact" type="number" value={draft.overlayPort} onChange={(event) => setDraft({ ...draft, overlayPort: Number(event.target.value) })} />
+                      </label>
                     </div>
-                    <label>
-                      Overlay port
-                      <input type="number" value={draft.overlayPort} onChange={(event) => setDraft({ ...draft, overlayPort: Number(event.target.value) })} />
-                    </label>
-                  </div>
-                </CollapsibleSection>
+                  </CollapsibleSection>
 
-                <CollapsibleSection
-                  title="Text Styling"
-                  isOpen={overlaySections.textStyling}
-                  onToggle={() => setOverlaySections((current) => ({ ...current, textStyling: !current.textStyling }))}
-                >
-                  <div className="field-grid overlay-dimensions">
-                    <label>
-                      Text alignment
-                      <select
-                        value={draft.overlaySettings.textAlign}
-                        onChange={(event) => setDraft({
-                          ...draft,
-                          overlaySettings: {
-                            ...draft.overlaySettings,
-                            textAlign: event.target.value as Settings['overlaySettings']['textAlign'],
-                          },
-                        })}
-                      >
-                        <option value="Left">Left</option>
-                        <option value="Center">Center</option>
-                        <option value="Right">Right</option>
-                      </select>
-                    </label>
-                  </div>
-                  <TextStyleEditor
-                    title="Song"
-                    fontOptions={buildFontOptions(systemFonts, draft.overlaySettings.songTextStyle.fontFamily)}
-                    value={draft.overlaySettings.songTextStyle}
-                    onChange={(value) => setDraft({
-                      ...draft,
-                      overlaySettings: {
-                        ...draft.overlaySettings,
-                        songTextStyle: value,
-                      },
-                    })}
-                  />
-                  <TextStyleEditor
-                    title="Artist"
-                    fontOptions={buildFontOptions(systemFonts, draft.overlaySettings.artistTextStyle.fontFamily)}
-                    value={draft.overlaySettings.artistTextStyle}
-                    onChange={(value) => setDraft({
-                      ...draft,
-                      overlaySettings: {
-                        ...draft.overlaySettings,
-                        artistTextStyle: value,
-                      },
-                    })}
-                  />
-                  <TextStyleEditor
-                    title="Album"
-                    fontOptions={buildFontOptions(systemFonts, draft.overlaySettings.albumTextStyle.fontFamily)}
-                    value={draft.overlaySettings.albumTextStyle}
-                    onChange={(value) => setDraft({
-                      ...draft,
-                      overlaySettings: {
-                        ...draft.overlaySettings,
-                        albumTextStyle: value,
-                      },
-                    })}
-                  />
-                </CollapsibleSection>
-
-                <CollapsibleSection
-                  title="Artwork"
-                  isOpen={overlaySections.artwork}
-                  onToggle={() => setOverlaySections((current) => ({ ...current, artwork: !current.artwork }))}
-                >
-                  <div className="field-grid overlay-dimensions">
-                    <NumberField
-                      label="Artwork image size (px)"
-                      value={draft.overlaySettings.imageSizePx}
-                      min={1}
-                      invalid={!isPositiveNumber(draft.overlaySettings.imageSizePx)}
-                      onChange={(value) => setDraft({
-                        ...draft,
-                        overlaySettings: {
-                          ...draft.overlaySettings,
-                          imageSizePx: value,
-                        },
-                      })}
-                    />
-                    <label>
-                      Artwork position
-                      <select
-                        value={draft.overlaySettings.imagePosition}
-                        onChange={(event) => setDraft({
-                          ...draft,
-                          overlaySettings: {
-                            ...draft.overlaySettings,
-                            imagePosition: event.target.value as Settings['overlaySettings']['imagePosition'],
-                          },
-                        })}
-                      >
-                        <option value="Left">Left</option>
-                        <option value="Right">Right</option>
-                      </select>
-                    </label>
-                  </div>
-                </CollapsibleSection>
-
-                <CollapsibleSection
-                  title="Container"
-                  isOpen={overlaySections.container}
-                  onToggle={() => setOverlaySections((current) => ({ ...current, container: !current.container }))}
-                >
-                  <div className="field-grid">
-                    <label>
-                      Background mode
-                      <select
-                        value={draft.overlaySettings.overlayContainerStyle.backgroundMode}
-                        onChange={(event) => setDraft(updateOverlayContainer(draft, {
-                          backgroundMode: event.target.value as Settings['overlaySettings']['overlayContainerStyle']['backgroundMode'],
-                        }))}
-                      >
-                        {overlayBackgroundModeOptions.map((mode) => (
-                          <option key={mode} value={mode}>
-                            {mode === 'solid' ? 'Solid Color' : 'Gradient'}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <ColorField
-                      label="Background color"
-                      value={draft.overlaySettings.overlayContainerStyle.backgroundColorHex}
-                      invalid={!isValidHexColor(draft.overlaySettings.overlayContainerStyle.backgroundColorHex)}
-                      onChange={(value) => {
-                        const nextDraft = updateOverlayContainer(draft, {
-                          backgroundColorHex: value,
-                        });
-                        setDraft({
-                          ...nextDraft,
-                          overlaySettings: {
-                            ...nextDraft.overlaySettings,
-                            backgroundColorHex: value,
-                          },
-                        });
-                      }}
-                    />
-                    {draft.overlaySettings.overlayContainerStyle.backgroundMode === 'gradient' ? (
-                      <>
-                        <label>
-                          Gradient colors
-                          <select
-                            value={draft.overlaySettings.overlayContainerStyle.gradient.colorCount}
-                            onChange={(event) => setDraft(updateGradientColorCount(
-                              draft,
-                              Number(event.target.value) as GradientSettings['colorCount'],
-                            ))}
-                          >
-                            {gradientColorCountOptions.map((count) => (
-                              <option key={count} value={count}>{count} colors</option>
-                            ))}
-                          </select>
-                        </label>
-                        <label>
-                          Gradient preset
-                          <select
-                            value={draft.overlaySettings.overlayContainerStyle.gradient.preset}
-                            onChange={(event) => setDraft(updateOverlayGradient(draft, {
-                              preset: event.target.value,
-                            }))}
-                          >
-                            {gradientPresetOptions.map((preset) => (
-                              <option key={preset} value={preset}>{preset}</option>
-                            ))}
-                          </select>
-                        </label>
-                        <ColorField
-                          label="Gradient Color 1"
-                          value={draft.overlaySettings.overlayContainerStyle.gradient.color1Hex}
-                          invalid={!isValidHexColor(draft.overlaySettings.overlayContainerStyle.gradient.color1Hex)}
-                          onChange={(value) => setDraft(updateOverlayGradient(draft, {
-                            color1Hex: value,
-                          }))}
-                        />
-                        <ColorField
-                          label="Gradient Color 2"
-                          value={draft.overlaySettings.overlayContainerStyle.gradient.color2Hex}
-                          invalid={!isValidHexColor(draft.overlaySettings.overlayContainerStyle.gradient.color2Hex)}
-                          onChange={(value) => setDraft(updateOverlayGradient(draft, {
-                            color2Hex: value,
-                          }))}
-                        />
-                        {draft.overlaySettings.overlayContainerStyle.gradient.colorCount === 3 ? (
-                          <ColorField
-                            label="Gradient Color 3"
-                            value={draft.overlaySettings.overlayContainerStyle.gradient.color3Hex}
-                            invalid={!isValidHexColor(draft.overlaySettings.overlayContainerStyle.gradient.color3Hex)}
-                            onChange={(value) => setDraft(updateOverlayGradient(draft, {
-                              color3Hex: value,
-                            }))}
-                          />
-                        ) : null}
-                        <AngleField
-                          label="Gradient Angle"
-                          value={draft.overlaySettings.overlayContainerStyle.gradient.angleDeg}
-                          onChange={(value) => setDraft(updateOverlayGradient(draft, {
-                            angleDeg: value,
-                          }))}
-                        />
-                      </>
-                    ) : null}
-                    <OpacityField
-                      label="Background Opacity"
-                      value={draft.overlaySettings.overlayContainerStyle.opacity}
-                      onChange={(value) => setDraft(updateOverlayContainer(draft, {
-                        opacity: value,
-                      }))}
-                    />
-                    <NumberField
-                      label="Corner radius (px)"
-                      value={draft.overlaySettings.overlayContainerStyle.cornerRadiusPx}
-                      min={0}
-                      invalid={!isZeroOrPositiveNumber(draft.overlaySettings.overlayContainerStyle.cornerRadiusPx)}
-                      onChange={(value) => setDraft(updateOverlayContainer(draft, {
-                        cornerRadiusPx: value,
-                      }))}
-                    />
-                    <NumberField
-                      label="Padding (px)"
-                      value={draft.overlaySettings.overlayContainerStyle.paddingPx}
-                      min={0}
-                      invalid={!isZeroOrPositiveNumber(draft.overlaySettings.overlayContainerStyle.paddingPx)}
-                      onChange={(value) => setDraft(updateOverlayContainer(draft, {
-                        paddingPx: value,
-                      }))}
-                    />
-                    <NumberField
-                      label="Gap (px)"
-                      value={draft.overlaySettings.overlayContainerStyle.gapPx}
-                      min={0}
-                      invalid={!isZeroOrPositiveNumber(draft.overlaySettings.overlayContainerStyle.gapPx)}
-                      onChange={(value) => setDraft(updateOverlayContainer(draft, {
-                        gapPx: value,
-                      }))}
-                    />
-                    <ToggleField
-                      label="Border enabled"
-                      checked={draft.overlaySettings.overlayContainerStyle.borderEnabled}
-                      onChange={(value) => setDraft(updateOverlayContainer(draft, {
-                        borderEnabled: value,
-                      }))}
-                    />
-                    <ColorField
-                      label="Border color"
-                      value={draft.overlaySettings.overlayContainerStyle.borderColorHex}
-                      invalid={!isValidHexColor(draft.overlaySettings.overlayContainerStyle.borderColorHex)}
-                      onChange={(value) => setDraft(updateOverlayContainer(draft, {
-                        borderColorHex: value,
-                      }))}
-                    />
-                    <NumberField
-                      label="Border width (px)"
-                      value={draft.overlaySettings.overlayContainerStyle.borderWidthPx}
-                      min={0}
-                      invalid={!isZeroOrPositiveNumber(draft.overlaySettings.overlayContainerStyle.borderWidthPx)}
-                      onChange={(value) => setDraft(updateOverlayContainer(draft, {
-                        borderWidthPx: value,
-                      }))}
-                    />
-                  </div>
-                </CollapsibleSection>
-
-                <CollapsibleSection
-                  title="Status Pill"
-                  isOpen={overlaySections.statusPill}
-                  onToggle={() => setOverlaySections((current) => ({ ...current, statusPill: !current.statusPill }))}
-                >
-                  <div className="field-grid">
-                    <ColorField
-                      label="Background color"
-                      value={draft.overlaySettings.statusPillStyle.backgroundColorHex}
-                      invalid={!isValidHexColor(draft.overlaySettings.statusPillStyle.backgroundColorHex)}
-                      onChange={(value) => setDraft({
-                        ...draft,
-                        overlaySettings: {
-                          ...draft.overlaySettings,
-                          statusPillStyle: {
-                            ...draft.overlaySettings.statusPillStyle,
-                            backgroundColorHex: value,
-                          },
-                        },
-                      })}
-                    />
-                    <ColorField
-                      label="Text color"
-                      value={draft.overlaySettings.statusPillStyle.textColorHex}
-                      invalid={!isValidHexColor(draft.overlaySettings.statusPillStyle.textColorHex)}
-                      onChange={(value) => setDraft({
-                        ...draft,
-                        overlaySettings: {
-                          ...draft.overlaySettings,
-                          statusPillStyle: {
-                            ...draft.overlaySettings.statusPillStyle,
-                            textColorHex: value,
-                          },
-                        },
-                      })}
-                    />
-                    <OpacityField
-                      label="Status Pill Opacity"
-                      value={draft.overlaySettings.statusPillStyle.opacity}
-                      onChange={(value) => setDraft({
-                        ...draft,
-                        overlaySettings: {
-                          ...draft.overlaySettings,
-                          statusPillStyle: {
-                            ...draft.overlaySettings.statusPillStyle,
-                            opacity: value,
-                          },
-                        },
-                      })}
-                    />
-                    <label>
-                      Font family
-                      <select
-                        aria-invalid={!draft.overlaySettings.statusPillStyle.fontFamily.trim()}
-                        className={!draft.overlaySettings.statusPillStyle.fontFamily.trim() ? 'invalid-field' : ''}
-                        value={draft.overlaySettings.statusPillStyle.fontFamily}
-                        onChange={(event) => setDraft({
-                          ...draft,
-                          overlaySettings: {
-                            ...draft.overlaySettings,
-                            statusPillStyle: {
-                              ...draft.overlaySettings.statusPillStyle,
-                              fontFamily: event.target.value,
+                  <CollapsibleSection
+                    title="Text styling"
+                    isOpen={overlaySections.textStyling}
+                    onToggle={() => setOverlaySections((current) => ({ ...current, textStyling: !current.textStyling }))}
+                  >
+                    <div className="field-grid settings-grid overlay-behavior-grid">
+                      <label className="field-span-medium">
+                        Text alignment
+                        <select
+                          className="field-control field-control-medium"
+                          value={draft.overlaySettings.textAlign}
+                          onChange={(event) => setDraft({
+                            ...draft,
+                            overlaySettings: {
+                              ...draft.overlaySettings,
+                              textAlign: event.target.value as Settings['overlaySettings']['textAlign'],
                             },
+                          })}
+                        >
+                          <option value="Left">Left</option>
+                          <option value="Center">Center</option>
+                          <option value="Right">Right</option>
+                        </select>
+                      </label>
+                    </div>
+                    <div className="inline-tabs" role="tablist" aria-label="Overlay text type">
+                      {(['song', 'artist', 'album'] as const).map((target) => (
+                        <button
+                          key={target}
+                          type="button"
+                          className={`tab-button inline-tab-button ${activeTextStyleTarget === target ? 'active' : ''}`}
+                          role="tab"
+                          aria-selected={activeTextStyleTarget === target}
+                          onClick={() => setActiveTextStyleTarget(target)}
+                        >
+                          {target === 'song' ? 'Song' : target === 'artist' ? 'Artist' : 'Album'}
+                        </button>
+                      ))}
+                    </div>
+                    <TextStyleEditor
+                      title={`${activeTextStyleLabel} text`}
+                      fontOptions={buildFontOptions(systemFonts, activeTextStyleValue.fontFamily)}
+                      value={activeTextStyleValue}
+                      onChange={updateActiveTextStyle}
+                    />
+                  </CollapsibleSection>
+
+                  <CollapsibleSection
+                    title="Artwork"
+                    isOpen={overlaySections.artwork}
+                    onToggle={() => setOverlaySections((current) => ({ ...current, artwork: !current.artwork }))}
+                  >
+                    <div className="field-grid settings-grid">
+                      <NumberField
+                        className="field-span-compact"
+                        inputClassName="field-control field-control-compact"
+                        label="Artwork image size (px)"
+                        value={draft.overlaySettings.imageSizePx}
+                        min={1}
+                        invalid={!isPositiveNumber(draft.overlaySettings.imageSizePx)}
+                        onChange={(value) => setDraft({
+                          ...draft,
+                          overlaySettings: {
+                            ...draft.overlaySettings,
+                            imageSizePx: value,
                           },
                         })}
-                      >
-                        {buildFontOptions(systemFonts, draft.overlaySettings.statusPillStyle.fontFamily).map((font) => (
-                          <option key={font} value={font}>{font}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <NumberField
-                      label="Font size (px)"
-                      value={draft.overlaySettings.statusPillStyle.fontSizePx}
-                      min={1}
-                      invalid={!isPositiveNumber(draft.overlaySettings.statusPillStyle.fontSizePx)}
-                      onChange={(value) => setDraft({
-                        ...draft,
-                        overlaySettings: {
-                          ...draft.overlaySettings,
-                          statusPillStyle: {
-                            ...draft.overlaySettings.statusPillStyle,
-                            fontSizePx: value,
-                          },
-                        },
-                      })}
-                    />
-                    <NumberField
-                      label="Corner radius (px)"
-                      value={draft.overlaySettings.statusPillStyle.cornerRadiusPx}
-                      min={0}
-                      invalid={!isZeroOrPositiveNumber(draft.overlaySettings.statusPillStyle.cornerRadiusPx)}
-                      onChange={(value) => setDraft({
-                        ...draft,
-                        overlaySettings: {
-                          ...draft.overlaySettings,
-                          statusPillStyle: {
-                            ...draft.overlaySettings.statusPillStyle,
-                            cornerRadiusPx: value,
-                          },
-                        },
-                      })}
-                    />
-                    <NumberField
-                      label="Horizontal padding (px)"
-                      value={draft.overlaySettings.statusPillStyle.paddingHorizontalPx}
-                      min={0}
-                      invalid={!isZeroOrPositiveNumber(draft.overlaySettings.statusPillStyle.paddingHorizontalPx)}
-                      onChange={(value) => setDraft({
-                        ...draft,
-                        overlaySettings: {
-                          ...draft.overlaySettings,
-                          statusPillStyle: {
-                            ...draft.overlaySettings.statusPillStyle,
-                            paddingHorizontalPx: value,
-                          },
-                        },
-                      })}
-                    />
-                    <NumberField
-                      label="Vertical padding (px)"
-                      value={draft.overlaySettings.statusPillStyle.paddingVerticalPx}
-                      min={0}
-                      invalid={!isZeroOrPositiveNumber(draft.overlaySettings.statusPillStyle.paddingVerticalPx)}
-                      onChange={(value) => setDraft({
-                        ...draft,
-                        overlaySettings: {
-                          ...draft.overlaySettings,
-                          statusPillStyle: {
-                            ...draft.overlaySettings.statusPillStyle,
-                            paddingVerticalPx: value,
-                          },
-                        },
-                      })}
-                    />
-                  </div>
-                  <div className="toggle-list compact-toggles">
-                    <Toggle label="Bold" checked={draft.overlaySettings.statusPillStyle.bold} onChange={(value) => setDraft({
-                      ...draft,
-                      overlaySettings: {
-                        ...draft.overlaySettings,
-                        statusPillStyle: {
-                          ...draft.overlaySettings.statusPillStyle,
-                          bold: value,
-                        },
-                      },
-                    })} />
-                    <Toggle label="Italic" checked={draft.overlaySettings.statusPillStyle.italic} onChange={(value) => setDraft({
-                      ...draft,
-                      overlaySettings: {
-                        ...draft.overlaySettings,
-                        statusPillStyle: {
-                          ...draft.overlaySettings.statusPillStyle,
-                          italic: value,
-                        },
-                      },
-                    })} />
-                    <Toggle label="Underline" checked={draft.overlaySettings.statusPillStyle.underline} onChange={(value) => setDraft({
-                      ...draft,
-                      overlaySettings: {
-                        ...draft.overlaySettings,
-                        statusPillStyle: {
-                          ...draft.overlaySettings.statusPillStyle,
-                          underline: value,
-                        },
-                      },
-                    })} />
-                  </div>
-                </CollapsibleSection>
+                      />
+                      <label className="field-span-medium">
+                        Artwork position
+                        <select
+                          className="field-control field-control-medium"
+                          value={draft.overlaySettings.imagePosition}
+                          onChange={(event) => setDraft({
+                            ...draft,
+                            overlaySettings: {
+                              ...draft.overlaySettings,
+                              imagePosition: event.target.value as Settings['overlaySettings']['imagePosition'],
+                            },
+                          })}
+                        >
+                          <option value="Left">Left</option>
+                          <option value="Right">Right</option>
+                        </select>
+                      </label>
+                    </div>
+                  </CollapsibleSection>
 
-                <CollapsibleSection
-                  title="Live Preview"
-                  isOpen={overlaySections.livePreview}
-                  onToggle={() => setOverlaySections((current) => ({ ...current, livePreview: !current.livePreview }))}
-                >
-                  <div className="preview-panel">
-                    <NowPlayingOverlayView
-                      overlaySettings={draft.overlaySettings}
-                      nowPlaying={previewNowPlaying}
-                      artworkUrl={previewArtworkUrl}
-                      artworkAlt={`${previewNowPlaying.title || 'Waiting for playback'} cover art`}
-                      fallbackMode="app"
-                    />
-                  </div>
-                </CollapsibleSection>
+                  <CollapsibleSection
+                    title="Container"
+                    isOpen={overlaySections.container}
+                    onToggle={() => setOverlaySections((current) => ({ ...current, container: !current.container }))}
+                  >
+                    <div className="mini-section">
+                      <h4 className="mini-section-title">Background</h4>
+                      <div className="field-grid settings-grid mini-section-grid">
+                        <label className="field-span-medium">
+                          Background mode
+                          <select
+                            className="field-control field-control-medium"
+                            value={draft.overlaySettings.overlayContainerStyle.backgroundMode}
+                            onChange={(event) => setDraft(updateOverlayContainer(draft, {
+                              backgroundMode: event.target.value as Settings['overlaySettings']['overlayContainerStyle']['backgroundMode'],
+                            }))}
+                          >
+                            {overlayBackgroundModeOptions.map((mode) => (
+                              <option key={mode} value={mode}>
+                                {mode === 'solid' ? 'Solid Color' : 'Gradient'}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <ColorField
+                          className="field-span-medium"
+                          inputClassName="field-control field-control-compact"
+                          label="Background color"
+                          value={draft.overlaySettings.overlayContainerStyle.backgroundColorHex}
+                          invalid={!isValidHexColor(draft.overlaySettings.overlayContainerStyle.backgroundColorHex)}
+                          onChange={(value) => {
+                            const nextDraft = updateOverlayContainer(draft, {
+                              backgroundColorHex: value,
+                            });
+                            setDraft({
+                              ...nextDraft,
+                              overlaySettings: {
+                                ...nextDraft.overlaySettings,
+                                backgroundColorHex: value,
+                              },
+                            });
+                          }}
+                        />
+                        <OpacityField
+                          className="field-span-large"
+                          label="Background Opacity"
+                          value={draft.overlaySettings.overlayContainerStyle.opacity}
+                          onChange={(value) => setDraft(updateOverlayContainer(draft, {
+                            opacity: value,
+                          }))}
+                        />
+                      </div>
+                    </div>
+                    {draft.overlaySettings.overlayContainerStyle.backgroundMode === 'gradient' ? (
+                      <div className="mini-section">
+                        <h4 className="mini-section-title">Gradient</h4>
+                        <div className="field-grid settings-grid mini-section-grid">
+                          <label className="field-span-compact">
+                            Gradient colors
+                            <select
+                              className="field-control field-control-compact"
+                              value={draft.overlaySettings.overlayContainerStyle.gradient.colorCount}
+                              onChange={(event) => setDraft(updateGradientColorCount(
+                                draft,
+                                Number(event.target.value) as GradientSettings['colorCount'],
+                              ))}
+                            >
+                              {gradientColorCountOptions.map((count) => (
+                                <option key={count} value={count}>{count} colors</option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="field-span-medium">
+                            Gradient preset
+                            <select
+                              className="field-control field-control-medium"
+                              value={draft.overlaySettings.overlayContainerStyle.gradient.preset}
+                              onChange={(event) => setDraft(updateOverlayGradient(draft, {
+                                preset: event.target.value,
+                              }))}
+                            >
+                              {gradientPresetOptions.map((preset) => (
+                                <option key={preset} value={preset}>{preset}</option>
+                              ))}
+                            </select>
+                          </label>
+                          <ColorField className="field-span-medium" inputClassName="field-control field-control-compact" label="Gradient Color 1" value={draft.overlaySettings.overlayContainerStyle.gradient.color1Hex} invalid={!isValidHexColor(draft.overlaySettings.overlayContainerStyle.gradient.color1Hex)} onChange={(value) => setDraft(updateOverlayGradient(draft, { color1Hex: value }))} />
+                          <ColorField className="field-span-medium" inputClassName="field-control field-control-compact" label="Gradient Color 2" value={draft.overlaySettings.overlayContainerStyle.gradient.color2Hex} invalid={!isValidHexColor(draft.overlaySettings.overlayContainerStyle.gradient.color2Hex)} onChange={(value) => setDraft(updateOverlayGradient(draft, { color2Hex: value }))} />
+                          {draft.overlaySettings.overlayContainerStyle.gradient.colorCount === 3 ? (
+                            <ColorField className="field-span-medium" inputClassName="field-control field-control-compact" label="Gradient Color 3" value={draft.overlaySettings.overlayContainerStyle.gradient.color3Hex} invalid={!isValidHexColor(draft.overlaySettings.overlayContainerStyle.gradient.color3Hex)} onChange={(value) => setDraft(updateOverlayGradient(draft, { color3Hex: value }))} />
+                          ) : null}
+                          <AngleField className="field-span-large" label="Gradient Angle" value={draft.overlaySettings.overlayContainerStyle.gradient.angleDeg} onChange={(value) => setDraft(updateOverlayGradient(draft, { angleDeg: value }))} />
+                        </div>
+                      </div>
+                    ) : null}
+                    <div className="mini-section">
+                      <h4 className="mini-section-title">Shape & Spacing</h4>
+                      <div className="field-grid settings-grid mini-section-grid">
+                        <NumberField className="field-span-compact" inputClassName="field-control field-control-compact" label="Corner radius (px)" value={draft.overlaySettings.overlayContainerStyle.cornerRadiusPx} min={0} invalid={!isZeroOrPositiveNumber(draft.overlaySettings.overlayContainerStyle.cornerRadiusPx)} onChange={(value) => setDraft(updateOverlayContainer(draft, { cornerRadiusPx: value }))} />
+                        <NumberField className="field-span-compact" inputClassName="field-control field-control-compact" label="Padding (px)" value={draft.overlaySettings.overlayContainerStyle.paddingPx} min={0} invalid={!isZeroOrPositiveNumber(draft.overlaySettings.overlayContainerStyle.paddingPx)} onChange={(value) => setDraft(updateOverlayContainer(draft, { paddingPx: value }))} />
+                        <NumberField className="field-span-compact" inputClassName="field-control field-control-compact" label="Gap (px)" value={draft.overlaySettings.overlayContainerStyle.gapPx} min={0} invalid={!isZeroOrPositiveNumber(draft.overlaySettings.overlayContainerStyle.gapPx)} onChange={(value) => setDraft(updateOverlayContainer(draft, { gapPx: value }))} />
+                      </div>
+                    </div>
+                    <div className="mini-section">
+                      <h4 className="mini-section-title">Border</h4>
+                      <div className="field-grid settings-grid mini-section-grid">
+                        <ToggleField
+                          className="field-span-medium"
+                          label="Border enabled"
+                          checked={draft.overlaySettings.overlayContainerStyle.borderEnabled}
+                          onChange={(value) => setDraft(updateOverlayContainer(draft, {
+                            borderEnabled: value,
+                          }))}
+                        />
+                        {draft.overlaySettings.overlayContainerStyle.borderEnabled ? (
+                          <>
+                            <ColorField className="field-span-medium" inputClassName="field-control field-control-compact" label="Border color" value={draft.overlaySettings.overlayContainerStyle.borderColorHex} invalid={!isValidHexColor(draft.overlaySettings.overlayContainerStyle.borderColorHex)} onChange={(value) => setDraft(updateOverlayContainer(draft, { borderColorHex: value }))} />
+                            <NumberField className="field-span-compact" inputClassName="field-control field-control-compact" label="Border width (px)" value={draft.overlaySettings.overlayContainerStyle.borderWidthPx} min={0} invalid={!isZeroOrPositiveNumber(draft.overlaySettings.overlayContainerStyle.borderWidthPx)} onChange={(value) => setDraft(updateOverlayContainer(draft, { borderWidthPx: value }))} />
+                          </>
+                        ) : null}
+                      </div>
+                    </div>
+                  </CollapsibleSection>
 
-                <p className="note">Hex colors must use `#RGB` or `#RRGGBB`. Save is disabled while any overlay field is invalid.</p>
+                  <CollapsibleSection
+                    title="Status Pill"
+                    isOpen={overlaySections.statusPill}
+                    onToggle={() => setOverlaySections((current) => ({ ...current, statusPill: !current.statusPill }))}
+                  >
+                    <div className="mini-section">
+                      <h4 className="mini-section-title">Colors</h4>
+                      <div className="field-grid settings-grid mini-section-grid">
+                        <ColorField className="field-span-medium" inputClassName="field-control field-control-compact" label="Background color" value={draft.overlaySettings.statusPillStyle.backgroundColorHex} invalid={!isValidHexColor(draft.overlaySettings.statusPillStyle.backgroundColorHex)} onChange={(value) => setDraft({ ...draft, overlaySettings: { ...draft.overlaySettings, statusPillStyle: { ...draft.overlaySettings.statusPillStyle, backgroundColorHex: value } } })} />
+                        <ColorField className="field-span-medium" inputClassName="field-control field-control-compact" label="Text color" value={draft.overlaySettings.statusPillStyle.textColorHex} invalid={!isValidHexColor(draft.overlaySettings.statusPillStyle.textColorHex)} onChange={(value) => setDraft({ ...draft, overlaySettings: { ...draft.overlaySettings, statusPillStyle: { ...draft.overlaySettings.statusPillStyle, textColorHex: value } } })} />
+                        <OpacityField className="field-span-large" label="Status Pill Opacity" value={draft.overlaySettings.statusPillStyle.opacity} onChange={(value) => setDraft({ ...draft, overlaySettings: { ...draft.overlaySettings, statusPillStyle: { ...draft.overlaySettings.statusPillStyle, opacity: value } } })} />
+                      </div>
+                    </div>
+                    <div className="mini-section">
+                      <h4 className="mini-section-title">Typography</h4>
+                      <div className="field-grid settings-grid mini-section-grid">
+                        <label className="field-span-large">
+                          Font family
+                          <select
+                            aria-invalid={!draft.overlaySettings.statusPillStyle.fontFamily.trim()}
+                            className={`field-control field-control-large ${!draft.overlaySettings.statusPillStyle.fontFamily.trim() ? 'invalid-field' : ''}`}
+                            value={draft.overlaySettings.statusPillStyle.fontFamily}
+                            onChange={(event) => setDraft({
+                              ...draft,
+                              overlaySettings: {
+                                ...draft.overlaySettings,
+                                statusPillStyle: {
+                                  ...draft.overlaySettings.statusPillStyle,
+                                  fontFamily: event.target.value,
+                                },
+                              },
+                            })}
+                          >
+                            {buildFontOptions(systemFonts, draft.overlaySettings.statusPillStyle.fontFamily).map((font) => (
+                              <option key={font} value={font}>{font}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <NumberField className="field-span-compact" inputClassName="field-control field-control-compact" label="Font size (px)" value={draft.overlaySettings.statusPillStyle.fontSizePx} min={1} invalid={!isPositiveNumber(draft.overlaySettings.statusPillStyle.fontSizePx)} onChange={(value) => setDraft({ ...draft, overlaySettings: { ...draft.overlaySettings, statusPillStyle: { ...draft.overlaySettings.statusPillStyle, fontSizePx: value } } })} />
+                      </div>
+                      <div className="toggle-list toggle-grid toggle-grid-compact mini-toggle-group">
+                        <Toggle label="Bold" checked={draft.overlaySettings.statusPillStyle.bold} onChange={(value) => setDraft({ ...draft, overlaySettings: { ...draft.overlaySettings, statusPillStyle: { ...draft.overlaySettings.statusPillStyle, bold: value } } })} />
+                        <Toggle label="Italic" checked={draft.overlaySettings.statusPillStyle.italic} onChange={(value) => setDraft({ ...draft, overlaySettings: { ...draft.overlaySettings, statusPillStyle: { ...draft.overlaySettings.statusPillStyle, italic: value } } })} />
+                        <Toggle label="Underline" checked={draft.overlaySettings.statusPillStyle.underline} onChange={(value) => setDraft({ ...draft, overlaySettings: { ...draft.overlaySettings, statusPillStyle: { ...draft.overlaySettings.statusPillStyle, underline: value } } })} />
+                      </div>
+                    </div>
+                    <div className="mini-section">
+                      <h4 className="mini-section-title">Shape & Padding</h4>
+                      <div className="field-grid settings-grid mini-section-grid">
+                        <NumberField className="field-span-compact" inputClassName="field-control field-control-compact" label="Corner radius (px)" value={draft.overlaySettings.statusPillStyle.cornerRadiusPx} min={0} invalid={!isZeroOrPositiveNumber(draft.overlaySettings.statusPillStyle.cornerRadiusPx)} onChange={(value) => setDraft({ ...draft, overlaySettings: { ...draft.overlaySettings, statusPillStyle: { ...draft.overlaySettings.statusPillStyle, cornerRadiusPx: value } } })} />
+                        <NumberField className="field-span-compact" inputClassName="field-control field-control-compact" label="Horizontal padding (px)" value={draft.overlaySettings.statusPillStyle.paddingHorizontalPx} min={0} invalid={!isZeroOrPositiveNumber(draft.overlaySettings.statusPillStyle.paddingHorizontalPx)} onChange={(value) => setDraft({ ...draft, overlaySettings: { ...draft.overlaySettings, statusPillStyle: { ...draft.overlaySettings.statusPillStyle, paddingHorizontalPx: value } } })} />
+                        <NumberField className="field-span-compact" inputClassName="field-control field-control-compact" label="Vertical padding (px)" value={draft.overlaySettings.statusPillStyle.paddingVerticalPx} min={0} invalid={!isZeroOrPositiveNumber(draft.overlaySettings.statusPillStyle.paddingVerticalPx)} onChange={(value) => setDraft({ ...draft, overlaySettings: { ...draft.overlaySettings, statusPillStyle: { ...draft.overlaySettings.statusPillStyle, paddingVerticalPx: value } } })} />
+                      </div>
+                    </div>
+                  </CollapsibleSection>
+
+                  <p className="note">Hex colors must use `#RGB` or `#RRGGBB`. Save is disabled while any overlay field is invalid.</p>
+                </div>
+
+                <aside className="overlay-preview-pane">
+                  <section className="text-style-card preview-card">
+                    <div className="section-head preview-card-head">
+                      <div>
+                        <h3>Live Preview</h3>
+                        <p className="preview-note">Updates as you edit.</p>
+                      </div>
+                    </div>
+                    <div className="preview-panel">
+                      <NowPlayingOverlayView
+                        overlaySettings={draft.overlaySettings}
+                        nowPlaying={previewNowPlaying}
+                        artworkUrl={previewArtworkUrl}
+                        artworkAlt={`${previewNowPlaying.title || 'Waiting for playback'} cover art`}
+                        fallbackMode="preview"
+                      />
+                    </div>
+                  </section>
+                </aside>
               </div>
             )}
             <div className="panel-footer">
-              <button className="ghost" onClick={closeSettings}>Close</button>
-              <button className="solid" disabled={saving || hasOverlayErrors} onClick={saveSettings}>{saving ? 'Saving...' : 'Save settings'}</button>
+              <div className="panel-footer-status">
+                {hasUnsavedChanges ? <p className="settings-dirty-indicator">Unsaved changes</p> : <span className="settings-dirty-spacer" aria-hidden="true" />}
+                {saveError ? <p className="inline-feedback danger">{saveError}</p> : null}
+              </div>
+              <button className="button-ghost" onClick={closeSettings}>Close</button>
+              <button className="button-primary" disabled={saving || hasOverlayErrors} onClick={saveSettings}>{saving ? 'Saving...' : 'Save settings'}</button>
             </div>
           </section>
         </div>
@@ -1175,22 +1093,22 @@ function CollapsibleSection({
   );
 }
 
-function ToggleField({ label, checked, onChange }: { label: string; checked: boolean; onChange: (value: boolean) => void }) {
+function ToggleField({ label, checked, onChange, className = '' }: { label: string; checked: boolean; onChange: (value: boolean) => void; className?: string }) {
   return (
-    <div className="field toggle-field">
+    <div className={`field toggle-field ${className}`.trim()}>
       <span>{label}</span>
       <Toggle label={label} checked={checked} onChange={onChange} />
     </div>
   );
 }
 
-function NumberField({ label, value, min, invalid, onChange }: { label: string; value: number; min: number; invalid: boolean; onChange: (value: number) => void }) {
+function NumberField({ label, value, min, invalid, onChange, className = '', inputClassName = '' }: { label: string; value: number; min: number; invalid: boolean; onChange: (value: number) => void; className?: string; inputClassName?: string }) {
   return (
-    <label>
+    <label className={className}>
       {label}
       <input
         aria-invalid={invalid}
-        className={invalid ? 'invalid-field' : ''}
+        className={`${inputClassName} ${invalid ? 'invalid-field' : ''}`.trim()}
         type="number"
         min={min}
         value={value}
@@ -1200,9 +1118,9 @@ function NumberField({ label, value, min, invalid, onChange }: { label: string; 
   );
 }
 
-function OpacityField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
+function OpacityField({ label, value, onChange, className = '' }: { label: string; value: number; onChange: (value: number) => void; className?: string }) {
   return (
-    <label>
+    <label className={className}>
       {label}
       <div className="slider-field">
         <input
@@ -1222,11 +1140,11 @@ function OpacityField({ label, value, onChange }: { label: string; value: number
   );
 }
 
-function AngleField({ label, value, onChange }: { label: string; value: number; onChange: (value: number) => void }) {
+function AngleField({ label, value, onChange, className = '' }: { label: string; value: number; onChange: (value: number) => void; className?: string }) {
   const invalid = !isGradientAngleValid(value);
 
   return (
-    <label>
+    <label className={className}>
       {label}
       <div className="slider-field">
         <input
@@ -1246,15 +1164,15 @@ function AngleField({ label, value, onChange }: { label: string; value: number; 
   );
 }
 
-function ColorField({ label, value, invalid, onChange }: { label: string; value: string; invalid: boolean; onChange: (value: string) => void }) {
+function ColorField({ label, value, invalid, onChange, className = '', inputClassName = '' }: { label: string; value: string; invalid: boolean; onChange: (value: string) => void; className?: string; inputClassName?: string }) {
   return (
-    <label>
+    <label className={className}>
       {label}
       <div className="color-field">
         <span className={`color-swatch ${invalid ? 'invalid' : ''}`} style={{ backgroundColor: invalid ? 'transparent' : value }} aria-hidden="true" />
         <input
           aria-invalid={invalid}
-          className={invalid ? 'invalid-field' : ''}
+          className={`${inputClassName} ${invalid ? 'invalid-field' : ''}`.trim()}
           type="text"
           value={value}
           onChange={(event) => onChange(event.target.value)}
@@ -1273,12 +1191,12 @@ function TextStyleEditor({ title, fontOptions, value, onChange }: { title: strin
   return (
     <section className="subsection-card">
       <h4>{title}</h4>
-      <div className="field-grid">
-        <label>
+      <div className="field-grid settings-grid">
+        <label className="field-span-large">
           Font family
           <select
             aria-invalid={!fontFamilyValid}
-            className={!fontFamilyValid ? 'invalid-field' : ''}
+            className={`field-control field-control-large ${!fontFamilyValid ? 'invalid-field' : ''}`}
             value={value.fontFamily}
             onChange={(event) => onChange({ ...value, fontFamily: event.target.value })}
           >
@@ -1288,12 +1206,16 @@ function TextStyleEditor({ title, fontOptions, value, onChange }: { title: strin
           </select>
         </label>
         <ColorField
+          className="field-span-medium"
+          inputClassName="field-control field-control-compact"
           label="Hex color"
           value={value.colorHex}
           invalid={!colorValid}
           onChange={(next) => onChange({ ...value, colorHex: next })}
         />
         <NumberField
+          className="field-span-compact"
+          inputClassName="field-control field-control-compact"
           label="Font size (px)"
           value={value.fontSizePx}
           min={1}
@@ -1301,6 +1223,8 @@ function TextStyleEditor({ title, fontOptions, value, onChange }: { title: strin
           onChange={(next) => onChange({ ...value, fontSizePx: next })}
         />
         <NumberField
+          className="field-span-compact"
+          inputClassName="field-control field-control-compact"
           label="Character limit"
           value={value.maxCharacters}
           min={0}
@@ -1308,7 +1232,7 @@ function TextStyleEditor({ title, fontOptions, value, onChange }: { title: strin
           onChange={(next) => onChange({ ...value, maxCharacters: next })}
         />
       </div>
-      <div className="toggle-list compact-toggles">
+      <div className="toggle-list toggle-grid toggle-grid-compact">
         <Toggle label="Bold" checked={value.bold} onChange={(next) => onChange({ ...value, bold: next })} />
         <Toggle label="Italic" checked={value.italic} onChange={(next) => onChange({ ...value, italic: next })} />
         <Toggle label="Underline" checked={value.underline} onChange={(next) => onChange({ ...value, underline: next })} />

@@ -911,8 +911,7 @@ public sealed class BridgeServiceBehaviorTests
                 ImagePosition = "Right",
                 TextAlign = "Center",
                 ShowAppName = false,
-                ShowPlaybackState = false,
-                ShowPlaybackProvider = true
+                ShowPlaybackState = false
             },
             BrowserSettings = harness.Settings.BrowserSettings
         }, CancellationToken.None);
@@ -932,7 +931,6 @@ public sealed class BridgeServiceBehaviorTests
         Assert.Equal("Center", state.Settings.OverlaySettings.TextAlign);
         Assert.False(state.Settings.OverlaySettings.ShowAppName);
         Assert.False(state.Settings.OverlaySettings.ShowPlaybackState);
-        Assert.True(state.Settings.OverlaySettings.ShowPlaybackProvider);
     }
 
     [Fact]

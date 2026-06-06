@@ -56,7 +56,6 @@ export type OverlaySettings = {
   textAlign: 'Left' | 'Center' | 'Right';
   showAppName: boolean;
   showPlaybackState: boolean;
-  showPlaybackProvider: boolean;
 };
 
 export type BrowserSupportSettings = {

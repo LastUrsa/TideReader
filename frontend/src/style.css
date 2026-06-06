@@ -1,5 +1,5 @@
 :root {
-  font-family: "Segoe UI", "IBM Plex Sans", sans-serif;
+  font-family: "Nunito", "Segoe UI", "Aptos", sans-serif;
   line-height: 1.5;
   font-weight: 400;
   color-scheme: dark;
@@ -18,12 +18,15 @@
   --accent: #50657f;
   --accent-hover: #627a96;
   --text-primary: #ebebeb;
+  --text-secondary: #b9babe;
   --text-muted: #929498;
   --border-color: #929498;
   --danger: #720201;
+  --danger-foreground: #ff7a7a;
   --danger-bg: #4a1014;
   --success: #89c89d;
   --warning: #d6b36a;
+  --info: #82b7ff;
   --shadow-color: rgba(0, 0, 0, 0.32);
   --surface-shadow: rgba(0, 0, 0, 0.32);
   --modal-backdrop: rgba(9, 12, 16, 0.78);
@@ -40,6 +43,9 @@
   --art-gradient-end: rgba(35, 37, 56, 0.92);
   --art-sheen-top: rgba(235, 235, 235, 0.08);
   --art-sheen-bottom: rgba(235, 235, 235, 0.02);
+  --motion-fast: 120ms;
+  --motion-standard: 180ms;
+  --motion-slow: 240ms;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -62,12 +68,15 @@
   --accent: #50657f;
   --accent-hover: #647f9d;
   --text-primary: #1f2330;
+  --text-secondary: #424754;
   --text-muted: #6f7378;
   --border-color: #c1c5ca;
   --danger: #720201;
+  --danger-foreground: #720201;
   --danger-bg: #f4d8d8;
   --success: #2d7a49;
   --warning: #9a6b17;
+  --info: #2d5fb6;
   --shadow-color: rgba(50, 51, 79, 0.12);
   --surface-shadow: rgba(50, 51, 79, 0.12);
   --modal-backdrop: rgba(9, 12, 16, 0.78);

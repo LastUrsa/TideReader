@@ -23,6 +23,7 @@ TideReader supports:
 - Publishes OBS-friendly text, JSON, image, and browser-overlay outputs
 - Supports overlay styling, live preview, and persisted settings
 - Includes browser-session debugging, source selection, and update checks
+- Uses a Starsong-aligned compact shell with branded app framing and focused playback status
 
 ## Project Layout
 
@@ -67,6 +68,7 @@ For desktop development against the Vite dev server:
 The repo quality gate requires:
 
 - Frontend coverage: `90%` statements/functions/lines and `85%` branches
+- Frontend dependency audit: `npm audit --audit-level=high`
 - Backend coverage: `85%` lines and `73%` branches
 - Release build of `TideReader.slnx`
 
@@ -75,6 +77,7 @@ Local gate commands:
 ```bash
 cd frontend
 npm run test:coverage
+npm audit --audit-level=high
 ```
 
 ```bash

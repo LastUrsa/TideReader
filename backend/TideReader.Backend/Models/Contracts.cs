@@ -110,7 +110,6 @@ public sealed class OverlaySettings
     public string TextAlign { get; set; } = "Left";
     public bool ShowAppName { get; set; } = true;
     public bool ShowPlaybackState { get; set; } = true;
-    public bool ShowPlaybackProvider { get; set; }
 }
 
 public sealed class BrowserSupportSettings

@@ -93,7 +93,6 @@ export const defaultOverlaySettings: OverlaySettings = {
   textAlign: 'Left',
   showAppName: true,
   showPlaybackState: true,
-  showPlaybackProvider: false,
 };
 
 export const sampleNowPlaying: DetectionResult = {

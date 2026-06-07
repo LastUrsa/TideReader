@@ -87,6 +87,55 @@ public sealed class BridgeService
         }
     }
 
+    public List<OverlayProfile> GetOverlayProfiles()
+    {
+        lock (_lock)
+        {
+            return _settings.OverlayProfiles.Select(CloneOverlayProfile).ToList();
+        }
+    }
+
+    public OverlayProfile GetActiveOverlayProfile()
+    {
+        lock (_lock)
+        {
+            var profile = _settings.OverlayProfiles.FirstOrDefault(profile =>
+                string.Equals(profile.Id, _settings.ActiveOverlayProfileId, StringComparison.OrdinalIgnoreCase));
+            return profile is null
+                ? new OverlayProfile()
+                : CloneOverlayProfile(profile);
+        }
+    }
+
+    public async Task<OverlayProfile?> ActivateOverlayProfileAsync(string name, CancellationToken cancellationToken)
+    {
+        name = name.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return null;
+        }
+
+        Settings nextSettings;
+        OverlayProfile activeProfile;
+        lock (_lock)
+        {
+            var profile = _settings.OverlayProfiles.FirstOrDefault(profile =>
+                string.Equals(profile.Name, name, StringComparison.OrdinalIgnoreCase));
+            if (profile is null)
+            {
+                return null;
+            }
+
+            activeProfile = CloneOverlayProfile(profile);
+            nextSettings = CloneSettings(_settings);
+            nextSettings.ActiveOverlayProfileId = activeProfile.Id;
+            nextSettings.OverlaySettings = CloneOverlaySettings(activeProfile.OverlaySettings);
+        }
+
+        await SaveSettingsAsync(nextSettings, cancellationToken);
+        return activeProfile;
+    }
+
     public async Task<AppState> SaveSettingsAsync(Settings settings, CancellationToken cancellationToken)
     {
         NormalizeSettings(settings, fallbackInvalidOutputFolder: false);

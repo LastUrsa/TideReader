@@ -13,6 +13,8 @@ public sealed class BackendHostOptions
     public IReadOnlyList<string> AllowedOrigins { get; init; } = [];
     public string? WebRootPath { get; init; }
     public bool UseTestServer { get; init; }
+    public bool EnableSipServer { get; init; } = true;
+    public string RuntimeMode { get; init; } = SipRuntimeModes.Standalone;
     public Action<IServiceCollection>? ConfigureTestServices { get; init; }
 }
 
@@ -24,11 +26,13 @@ public static class BackendHost
     public static WebApplication Build(string[]? args = null, BackendHostOptions? options = null)
     {
         options ??= new BackendHostOptions();
+        var webRootPath = ResolveWebRoot(options.WebRootPath);
 
         var builderOptions = new WebApplicationOptions
         {
             Args = args ?? [],
-            WebRootPath = ResolveWebRoot(options.WebRootPath)
+            ApplicationName = typeof(BackendHost).Assembly.FullName,
+            WebRootPath = IsUncPath(webRootPath) ? null : webRootPath
         };
 
         var builder = WebApplication.CreateBuilder(builderOptions);
@@ -101,6 +105,12 @@ public static class BackendHost
         services.AddHttpClient<IAppUpdateChecker, AppUpdateChecker>();
         services.AddSingleton<BridgeService>();
         services.AddHostedService<PollingWorker>();
+        services.AddSingleton(new SipHostOptions { RuntimeMode = options.RuntimeMode });
+        services.AddSingleton<SipService>();
+        if (options.EnableSipServer && !options.UseTestServer)
+        {
+            services.AddHostedService<SipServerHostedService>();
+        }
         options.ConfigureTestServices?.Invoke(services);
     }
 
@@ -238,6 +248,10 @@ public static class BackendHost
 
         return File.Exists(Path.Combine(webRootPath, "index.html"));
     }
+
+    private static bool IsUncPath(string? path) =>
+        !string.IsNullOrWhiteSpace(path) &&
+        path.StartsWith(@"\\", StringComparison.Ordinal);
 
     private static bool TokensMatch(string providedToken, string expectedToken)
     {

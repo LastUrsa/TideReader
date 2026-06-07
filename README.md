@@ -31,6 +31,8 @@ TideReader supports:
 - `desktop/TideReader.Desktop/` Windows host, tray behavior, startup integration, WebView2 shell
 - `frontend/` React settings UI and app shell
 - `docs/desktop-host.md` desktop runtime and packaging notes
+- `docs/sip-api-reference.md` SIP v1 API reference for LivePanel-style integration
+- `docs/postman/TideReader-SIP-v1.postman_collection.json` Postman collection for the SIP API
 - `TideReader.slnx` solution entrypoint
 
 ## Development

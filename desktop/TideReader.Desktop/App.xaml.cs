@@ -1,6 +1,8 @@
 using System.Drawing;
 using System.IO;
+using System.IO.Pipes;
 using System.Security.Cryptography;
+using System.Text;
 using System.Windows;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,6 +30,9 @@ public partial class App : Application
     private WebApplication? _backendApp;
     private BridgeService? _bridgeService;
     private MainWindow? _window;
+    private Mutex? _singleInstanceMutex;
+    private Task? _showSignalTask;
+    private LaunchConfig _launchConfig = LaunchConfig.Standalone;
     private bool _explicitExit;
 
     protected override async void OnStartup(StartupEventArgs e)
@@ -36,28 +41,33 @@ public partial class App : Application
 
         try
         {
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            _launchConfig = LaunchConfig.Parse(e.Args);
+            if (!AcquireSingleInstance())
+            {
+                if (_launchConfig.ShouldActivateExisting)
+                {
+                    await SendShowSignalAsync();
+                }
+
+                Shutdown();
+                return;
+            }
+
+            _showSignalTask = ListenForShowSignalsAsync(_shutdownCts.Token);
+
             var initialSettings = await LoadInitialSettingsAsync(_shutdownCts.Token);
-            _backendApp = BackendHost.Build([], CreateBackendOptions());
+            _backendApp = await Task.Run(() => BackendHost.Build([], CreateBackendOptions(_launchConfig)), _shutdownCts.Token);
             await _backendApp.StartAsync(_shutdownCts.Token);
 
             _bridgeService = _backendApp.Services.GetRequiredService<BridgeService>();
             _bridgeService.SettingsChanged += OnSettingsChanged;
             _startupRegistration.Sync(initialSettings.LaunchAtStartup);
 
-            _window = new MainWindow();
-            _window.StateChanged += OnWindowStateChanged;
-            _window.Closing += OnWindowClosing;
-            MainWindow = _window;
-
-            InitializeTray();
-
-            _window.Show();
-            if (initialSettings.StartMinimized)
+            if (!_launchConfig.ServiceMode)
             {
-                _window.Hide();
+                await EnsureMainWindowAsync(initialSettings.StartMinimized);
             }
-
-            await _window.NavigateAsync(CreateBrowserTarget());
         }
         catch (Exception ex)
         {
@@ -75,11 +85,12 @@ public partial class App : Application
     {
         await ShutdownBackendAsync();
         _notifyIcon?.Dispose();
+        _singleInstanceMutex?.Dispose();
         _shutdownCts.Dispose();
         base.OnExit(e);
     }
 
-    private static BackendHostOptions CreateBackendOptions()
+    private static BackendHostOptions CreateBackendOptions(LaunchConfig launchConfig)
     {
         var devServerUrl = ResolveDevServerUrl();
         string[] allowedOrigins = string.IsNullOrWhiteSpace(devServerUrl)
@@ -91,7 +102,8 @@ public partial class App : Application
             ApiUrl = ApiUrl,
             LocalApiToken = LocalApiToken,
             AllowedOrigins = allowedOrigins,
-            WebRootPath = ResolveFrontendDistPath()
+            WebRootPath = ResolveFrontendDistPath(),
+            RuntimeMode = launchConfig.ServiceMode ? SipRuntimeModes.Service : SipRuntimeModes.Standalone
         };
     }
 
@@ -180,10 +192,47 @@ public partial class App : Application
         return string.IsNullOrWhiteSpace(value) ? null : value.TrimEnd('/');
     }
 
+    private async Task EnsureMainWindowAsync(bool startMinimized = false)
+    {
+        var created = false;
+        if (_window is null)
+        {
+            _window = new MainWindow();
+            _window.StateChanged += OnWindowStateChanged;
+            _window.Closing += OnWindowClosing;
+            MainWindow = _window;
+            InitializeTray();
+            created = true;
+        }
+
+        _window.Show();
+        if (!startMinimized)
+        {
+            _window.WindowState = WindowState.Normal;
+            _window.Activate();
+        }
+
+        if (created)
+        {
+            await _window.NavigateAsync(CreateBrowserTarget());
+        }
+
+        if (startMinimized)
+        {
+            _window.Hide();
+            return;
+        }
+    }
+
     private void InitializeTray()
     {
+        if (_notifyIcon is not null)
+        {
+            return;
+        }
+
         var menu = new System.Windows.Forms.ContextMenuStrip();
-        menu.Items.Add("Open", null, (_, _) => ShowMainWindow());
+        menu.Items.Add("Open", null, async (_, _) => await EnsureMainWindowAsync());
         menu.Items.Add("Exit", null, async (_, _) => await ExitApplicationAsync());
 
         _notifyIcon = new NotifyIcon
@@ -213,14 +262,7 @@ public partial class App : Application
 
     private void ShowMainWindow()
     {
-        if (_window is null)
-        {
-            return;
-        }
-
-        _window.Show();
-        _window.WindowState = WindowState.Normal;
-        _window.Activate();
+        _ = EnsureMainWindowAsync();
     }
 
     private void OnWindowStateChanged(object? sender, EventArgs e)
@@ -267,6 +309,8 @@ public partial class App : Application
 
     private async Task ShutdownBackendAsync()
     {
+        _shutdownCts.Cancel();
+
         if (_bridgeService is not null)
         {
             _bridgeService.SettingsChanged -= OnSettingsChanged;
@@ -292,10 +336,84 @@ public partial class App : Application
             _backendApp = null;
         }
     }
+
+    private bool AcquireSingleInstance()
+    {
+        _singleInstanceMutex = new Mutex(initiallyOwned: true, "Local\\TideReader", out var createdNew);
+        return createdNew;
+    }
+
+    private async Task ListenForShowSignalsAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested)
+        {
+            try
+            {
+                await using var pipe = new NamedPipeServerStream("TideReader.Show", PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous);
+                await pipe.WaitForConnectionAsync(cancellationToken);
+                using var reader = new StreamReader(pipe, Encoding.UTF8);
+                var message = await reader.ReadToEndAsync(cancellationToken);
+                if (string.Equals(message.Trim(), "show", StringComparison.OrdinalIgnoreCase))
+                {
+                    var showTask = await Dispatcher.InvokeAsync(() => EnsureMainWindowAsync());
+                    await showTask;
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+            catch (IOException)
+            {
+            }
+        }
+    }
+
+    private static async Task SendShowSignalAsync()
+    {
+        try
+        {
+            await using var pipe = new NamedPipeClientStream(".", "TideReader.Show", PipeDirection.Out, PipeOptions.Asynchronous);
+            await pipe.ConnectAsync(1000);
+            await pipe.WriteAsync(Encoding.UTF8.GetBytes("show"));
+        }
+        catch (IOException)
+        {
+        }
+        catch (TimeoutException)
+        {
+        }
+    }
 }
 
 public sealed record BrowserTarget(string? Url, string? Html, IReadOnlyList<string> AllowedOrigins)
 {
     public static BrowserTarget ForUrl(string url, IReadOnlyList<string> allowedOrigins) => new(url, null, allowedOrigins);
     public static BrowserTarget ForHtml(string html) => new(null, html, []);
+}
+
+public sealed record LaunchConfig(bool ServiceMode, bool ShouldActivateExisting)
+{
+    public static readonly LaunchConfig Standalone = new(ServiceMode: false, ShouldActivateExisting: true);
+
+    public static LaunchConfig Parse(IEnumerable<string> args)
+    {
+        var service = false;
+        var show = false;
+        foreach (var arg in args)
+        {
+            if (string.Equals(arg, "--service", StringComparison.OrdinalIgnoreCase))
+            {
+                service = true;
+            }
+            else if (string.Equals(arg, "--show", StringComparison.OrdinalIgnoreCase))
+            {
+                show = true;
+            }
+        }
+
+        return new LaunchConfig(
+            ServiceMode: service && !show,
+            ShouldActivateExisting: show || !service);
+    }
 }

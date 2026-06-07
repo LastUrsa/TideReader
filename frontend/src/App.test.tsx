@@ -1201,6 +1201,7 @@ describe('App', () => {
     const image = await screen.findByRole('img', { name: 'Sample Track cover art' });
     fireEvent.error(image);
 
+    await waitFor(() => expect(screen.queryByRole('img', { name: 'Sample Track cover art' })).not.toBeInTheDocument());
     expect(await screen.findByText('TIDAL')).toBeInTheDocument();
   });
 

@@ -21,6 +21,9 @@ Write-Host "Building frontend..."
 Push-Location $frontendDir
 try {
     npm run build
+    if ($LASTEXITCODE -ne 0) {
+        throw "Frontend build failed with exit code $LASTEXITCODE."
+    }
 }
 finally {
     Pop-Location
@@ -32,6 +35,9 @@ dotnet publish $desktopProject `
     -r $Runtime `
     --self-contained:$($SelfContained.IsPresent.ToString().ToLowerInvariant()) `
     -o $publishDir
+if ($LASTEXITCODE -ne 0) {
+    throw "Desktop publish failed with exit code $LASTEXITCODE."
+}
 
 Write-Host ""
 Write-Host "Publish complete:"

@@ -58,6 +58,12 @@ export type OverlaySettings = {
   showPlaybackState: boolean;
 };
 
+export type OverlayProfile = {
+  id: string;
+  name: string;
+  overlaySettings: OverlaySettings;
+};
+
 export type BrowserSupportSettings = {
   chromeEnabled: boolean;
   edgeEnabled: boolean;
@@ -97,6 +103,8 @@ export type Settings = {
   metadataProviderMode: 'Off' | 'MusicBrainzOnly' | 'MusicBrainzWithFallbacks';
   themeMode: 'Dark' | 'Light';
   overlaySettings: OverlaySettings;
+  overlayProfiles: OverlayProfile[];
+  activeOverlayProfileId: string;
   browserSettings: BrowserSettings;
 };
 

@@ -4,6 +4,7 @@ import NowPlayingOverlayView from './NowPlayingOverlayView';
 import type { DetectionResult, OverlaySettings } from './api';
 import {
   cloneOverlaySettings,
+  createDefaultSettings,
   defaultOverlaySettings,
   formatPlaybackStatus,
   getGradientPresetOptions,
@@ -133,6 +134,7 @@ describe('overlay helpers', () => {
     expect(statusPillStyleHasErrors(badPillStyle)).toBe(true);
 
     const badSettings = {
+      ...createDefaultSettings(),
       outputFolder: '',
       overlayEnabled: true,
       overlayPort: 17655,

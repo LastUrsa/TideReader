@@ -994,6 +994,8 @@ public sealed class BridgeService
         MetadataProviderMode = settings.MetadataProviderMode,
         ThemeMode = settings.ThemeMode,
         OverlaySettings = CloneOverlaySettings(settings.OverlaySettings),
+        OverlayProfiles = settings.OverlayProfiles.Select(CloneOverlayProfile).ToList(),
+        ActiveOverlayProfileId = settings.ActiveOverlayProfileId,
         BrowserSettings = CloneBrowserSettings(settings.BrowserSettings)
     };
 
@@ -1040,6 +1042,7 @@ public sealed class BridgeService
         }
 
         NormalizeOverlaySettings(settings);
+        NormalizeOverlayProfiles(settings);
         NormalizeBrowserSettings(settings);
     }
 
@@ -1073,6 +1076,13 @@ public sealed class BridgeService
         TextAlign = settings.TextAlign,
         ShowAppName = settings.ShowAppName,
         ShowPlaybackState = settings.ShowPlaybackState
+    };
+
+    private static OverlayProfile CloneOverlayProfile(OverlayProfile profile) => new()
+    {
+        Id = profile.Id,
+        Name = profile.Name,
+        OverlaySettings = CloneOverlaySettings(profile.OverlaySettings)
     };
 
     private static BrowserSettings CloneBrowserSettings(BrowserSettings settings) => new()
@@ -1250,6 +1260,61 @@ public sealed class BridgeService
             settings.OverlaySettings.TextAlign,
             defaults.TextAlign,
             ["Left", "Center", "Right"]);
+    }
+
+    private static void NormalizeOverlayProfiles(Settings settings)
+    {
+        settings.OverlayProfiles ??= [];
+        if (settings.OverlayProfiles.Count == 0)
+        {
+            settings.ActiveOverlayProfileId = "default";
+            settings.OverlayProfiles.Add(new OverlayProfile
+            {
+                Id = settings.ActiveOverlayProfileId,
+                Name = "Default",
+                OverlaySettings = CloneOverlaySettings(settings.OverlaySettings)
+            });
+            return;
+        }
+
+        var usedIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        for (var index = 0; index < settings.OverlayProfiles.Count; index++)
+        {
+            var profile = settings.OverlayProfiles[index];
+            if (profile is null)
+            {
+                profile = new OverlayProfile();
+                settings.OverlayProfiles[index] = profile;
+            }
+
+            profile.Id = NormalizeOverlayProfileId(profile.Id, usedIds);
+            profile.Name = string.IsNullOrWhiteSpace(profile.Name)
+                ? $"Overlay Profile {index + 1}"
+                : profile.Name.Trim();
+            profile.OverlaySettings ??= new OverlaySettings();
+            var profileSettings = new Settings { OverlaySettings = profile.OverlaySettings };
+            NormalizeOverlaySettings(profileSettings);
+            profile.OverlaySettings = profileSettings.OverlaySettings;
+        }
+
+        if (!settings.OverlayProfiles.Any(profile => string.Equals(profile.Id, settings.ActiveOverlayProfileId, StringComparison.OrdinalIgnoreCase)))
+        {
+            settings.ActiveOverlayProfileId = settings.OverlayProfiles[0].Id;
+        }
+    }
+
+    private static string NormalizeOverlayProfileId(string id, HashSet<string> usedIds)
+    {
+        var normalized = string.IsNullOrWhiteSpace(id)
+            ? Guid.NewGuid().ToString("N")
+            : id.Trim();
+
+        while (!usedIds.Add(normalized))
+        {
+            normalized = Guid.NewGuid().ToString("N");
+        }
+
+        return normalized;
     }
 
     private static void NormalizeBrowserSettings(Settings settings)

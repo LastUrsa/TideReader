@@ -538,6 +538,27 @@ button {
   min-height: 32px;
 }
 
+.icon-button {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 10px;
+}
+
+.icon-button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .toggle-list {
   display: grid;
   gap: 12px;
@@ -579,6 +600,45 @@ button {
 
 .overlay-control-pane {
   min-width: 0;
+}
+
+.overlay-profile-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface-input) 58%, var(--surface-alt));
+}
+
+.overlay-profile-select {
+  display: grid;
+  grid-template-columns: max-content minmax(13rem, 1fr);
+  gap: 12px;
+  align-items: center;
+  min-width: 0;
+  margin: 0;
+  font-weight: 700;
+}
+
+.overlay-profile-select span {
+  white-space: nowrap;
+}
+
+.overlay-profile-select select {
+  min-width: 0;
+  max-width: 18rem;
+  padding-block: 9px;
+  border-radius: 12px;
+}
+
+.overlay-profile-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
 }
 
 .overlay-preview-pane {
@@ -767,6 +827,18 @@ button {
   color: var(--danger-foreground);
 }
 
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 input:focus,
 select:focus,
 button:focus {
@@ -895,6 +967,19 @@ button:disabled {
   gap: 10px;
 }
 
+.color-picker-field {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.color-picker-label {
+  display: block;
+}
+
 .settings-stack > .field,
 .settings-stack > .field-grid,
 .settings-stack > .update-panel-wrap,
@@ -960,8 +1045,7 @@ button:disabled {
 }
 
 .field > label,
-.field-grid label,
-.toggle-field {
+.field-grid label {
   align-content: start;
 }
 
@@ -976,7 +1060,8 @@ button:disabled {
 .field-grid label > input,
 .field-grid label > select,
 .field-grid label > .slider-field,
-.field-grid label > .color-field {
+.field-grid label > .color-field,
+.field-grid .color-picker-field > .color-field {
   margin-top: 2px;
 }
 
@@ -991,11 +1076,18 @@ button:disabled {
 }
 
 .color-swatch {
-  width: 22px;
-  height: 22px;
-  border-radius: 999px;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  padding: 0;
+  border-radius: 12px;
   border: 1px solid var(--soft-border);
   flex: 0 0 auto;
+  background-clip: padding-box;
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, white 24%, transparent),
+    0 0 0 1px color-mix(in srgb, black 18%, transparent);
 }
 
 .color-swatch.invalid {
@@ -1004,12 +1096,57 @@ button:disabled {
     color-mix(in srgb, var(--danger-bg) 55%, transparent);
 }
 
-.toggle-field {
-  margin-bottom: 0;
+.color-picker-popover {
+  position: fixed;
+  z-index: 1000;
+  width: 242px;
+  box-sizing: border-box;
+  padding: 12px;
+  border: 1px solid var(--panel-border);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface-primary) 94%, black);
+  box-shadow: 0 18px 42px color-mix(in srgb, black 45%, transparent);
 }
 
-.toggle-field .toggle span {
-  display: none;
+.color-picker-popover .react-colorful {
+  width: 100%;
+  height: 168px;
+}
+
+.color-picker-popover .react-colorful__saturation {
+  border-radius: 10px 10px 6px 6px;
+}
+
+.color-picker-popover .react-colorful__hue {
+  height: 16px;
+  margin-top: 10px;
+  border-radius: 999px;
+}
+
+.color-picker-popover .react-colorful__pointer {
+  width: 18px;
+  height: 18px;
+  border-width: 2px;
+}
+
+.toggle-field {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  margin-top: 2px;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.toggle-field input {
+  width: 18px;
+  height: 18px;
+  margin: 8px 0 0;
+  flex: 0 0 auto;
+}
+
+.toggle-field span {
+  line-height: 1.25;
 }
 
 .preview-panel {
@@ -1091,6 +1228,22 @@ button:disabled {
 }
 
 @media (max-width: 720px) {
+  .overlay-profile-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .overlay-profile-select {
+    grid-template-columns: 1fr;
+  }
+
+  .overlay-profile-select select {
+    max-width: none;
+  }
+
+  .overlay-profile-actions {
+    justify-content: flex-start;
+  }
+
   .field-grid {
     grid-template-columns: repeat(6, minmax(0, 1fr));
   }

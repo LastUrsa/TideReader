@@ -21,7 +21,7 @@ TideReader supports:
 - Falls back to the TIDAL window title when enabled
 - Normalizes metadata into a shared now-playing model
 - Publishes OBS-friendly text, JSON, image, and browser-overlay outputs
-- Supports overlay styling, live preview, and persisted settings
+- Supports overlay styling, visual color picking, live preview, saved profiles, and persisted settings
 - Includes browser-session debugging, source selection, and update checks
 - Uses a Starsong-aligned compact shell with branded app framing and focused playback status
 
@@ -62,6 +62,8 @@ For desktop development against the Vite dev server:
 1. Run `npm run dev` in `frontend/`
 2. Set `TIDAL_DESKTOP_DEV_SERVER_URL=http://127.0.0.1:5173`
 3. Run `dotnet run --project desktop/TideReader.Desktop`
+
+Set `TIDEREADER_KEEP_WINDOW_VISIBLE=1` during desktop UI work to keep close/minimize actions from sending the app to the tray.
 
 ## Quality Gates
 

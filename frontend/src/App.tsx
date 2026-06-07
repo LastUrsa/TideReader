@@ -1,9 +1,11 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { HexColorPicker } from 'react-colorful';
 import './App.css';
 import tideReaderIcon from './assets/images/TideReaderIcon.png';
 import NowPlayingOverlayView from './NowPlayingOverlayView';
-import { AppState, DetectionResult, GradientSettings, OverlayTextStyle, Settings, UpdateInfo, checkForUpdates as checkForUpdatesApi, chooseOutputFolder as chooseOutputFolderApi, getArtworkUrl, getState, getSystemFonts, openOutputFolder as openOutputFolderApi, openReleasePage as openReleasePageApi, runDetectionNow as runDetectionNowApi, saveSettings as saveSettingsApi } from './api';
-import { cloneOverlaySettings, createDefaultSettings, defaultOverlaySettings, formatPlaybackStatus, getAlbumDisplayText, getArtistDisplayText, getGradientPresetOptions, gradientColorCountOptions, isGradientAngleValid, isOpacityValid, isPositiveNumber, isValidHexColor, isZeroOrPositiveNumber, overlayBackgroundModeOptions, overlaySettingsHaveErrors, overlayTextStyleHasErrors, shouldHideArtworkFallback } from './overlay';
+import { AppState, DetectionResult, GradientSettings, OverlayProfile, OverlayTextStyle, Settings, UpdateInfo, checkForUpdates as checkForUpdatesApi, chooseOutputFolder as chooseOutputFolderApi, getArtworkUrl, getState, getSystemFonts, openOutputFolder as openOutputFolderApi, openReleasePage as openReleasePageApi, runDetectionNow as runDetectionNowApi, saveSettings as saveSettingsApi } from './api';
+import { cloneOverlayProfile, cloneOverlayProfiles, cloneOverlaySettings, createDefaultOverlayProfiles, createDefaultSettings, defaultOverlaySettings, formatPlaybackStatus, getAlbumDisplayText, getArtistDisplayText, getGradientPresetOptions, gradientColorCountOptions, isGradientAngleValid, isOpacityValid, isPositiveNumber, isValidHexColor, isZeroOrPositiveNumber, overlayBackgroundModeOptions, overlaySettingsHaveErrors, overlayTextStyleHasErrors, shouldHideArtworkFallback } from './overlay';
 
 type SettingsTab = 'general' | 'browser' | 'overlay';
 type OverlayTextTarget = 'song' | 'artist' | 'album';
@@ -135,6 +137,55 @@ function settingsEqual(left: Settings, right: Settings): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function normalizeColorHex(value: string): string | null {
+  const trimmed = value.trim();
+  const fullMatch = /^#[0-9A-Fa-f]{6}$/.test(trimmed);
+  if (fullMatch) {
+    return trimmed.toLowerCase();
+  }
+
+  const shortMatch = /^#[0-9A-Fa-f]{3}$/.test(trimmed);
+  if (!shortMatch) {
+    return null;
+  }
+
+  const [, red, green, blue] = trimmed.toLowerCase();
+  return `#${red}${red}${green}${green}${blue}${blue}`;
+}
+
+function isColorPickerHex(value: string): boolean {
+  return normalizeColorHex(value) !== null;
+}
+
+function createOverlayProfileId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `profile-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function ensureOverlayProfiles(settings: Settings): OverlayProfile[] {
+  return settings.overlayProfiles?.length > 0
+    ? settings.overlayProfiles
+    : createDefaultOverlayProfiles();
+}
+
+function getActiveOverlayProfile(settings: Settings): OverlayProfile {
+  const profiles = ensureOverlayProfiles(settings);
+  return profiles.find((profile) => profile.id === settings.activeOverlayProfileId) ?? profiles[0];
+}
+
+function getUniqueOverlayProfileName(baseName: string, profiles: OverlayProfile[]): string {
+  const trimmedBase = baseName.trim() || 'Overlay Profile';
+  const existing = new Set(profiles.map((profile) => profile.name.trim().toLowerCase()));
+  if (!existing.has(trimmedBase.toLowerCase())) {
+    return trimmedBase;
+  }
+
+  let suffix = 2;
+  while (existing.has(`${trimmedBase} ${suffix}`.toLowerCase())) {
+    suffix += 1;
+  }
+  return `${trimmedBase} ${suffix}`;
+}
+
 function App() {
   const [state, setState] = useState<AppState>(emptyState);
   const [draft, setDraft] = useState<Settings>(emptyState.settings);
@@ -169,6 +220,8 @@ function App() {
   const previewNowPlaying: DetectionResult = state.nowPlaying;
   const previewArtworkUrl = state.nowPlaying.artworkPath && !artworkFailed ? artworkUrl : '';
   const gradientPresetOptions = getGradientPresetOptions(draft.overlaySettings.overlayContainerStyle.gradient.colorCount);
+  const overlayProfiles = ensureOverlayProfiles(draft);
+  const activeOverlayProfile = getActiveOverlayProfile(draft);
   const activeTextStyleLabel = activeTextStyleTarget === 'song'
     ? 'Song'
     : activeTextStyleTarget === 'artist'
@@ -267,19 +320,74 @@ function App() {
     }
   }, []);
 
-  const saveSettings = async () => {
+  const persistSettings = async (settings: Settings, successMessage: string, closeAfterSave = false) => {
     setSaving(true);
     setSaveError('');
     try {
-      const nextState = await saveSettingsApi(draft);
+      const nextState = await saveSettingsApi(settings);
       setState(nextState);
-      showShellFeedback('success', 'Settings saved.');
-      closeSettings();
+      setDraft(nextState.settings);
+      showShellFeedback('success', successMessage);
+      if (closeAfterSave) {
+        closeSettings();
+      }
     } catch (error) {
       setSaveError(`Settings could not be saved: ${String(error)}`);
     } finally {
       setSaving(false);
     }
+  };
+
+  const saveSettings = async () => {
+    await persistSettings(draft, 'Settings saved.', true);
+  };
+
+  const selectOverlayProfile = async (profileId: string) => {
+    const profile = overlayProfiles.find((item) => item.id === profileId);
+    if (!profile) {
+      return;
+    }
+
+    await persistSettings({
+      ...draft,
+      activeOverlayProfileId: profile.id,
+      overlayProfiles: cloneOverlayProfiles(overlayProfiles),
+      overlaySettings: cloneOverlaySettings(profile.overlaySettings),
+    }, `Applied ${profile.name}.`);
+  };
+
+  const saveOverlayProfile = async () => {
+    const profiles = overlayProfiles.map((profile) => profile.id === activeOverlayProfile.id
+      ? {
+          ...cloneOverlayProfile(profile),
+          overlaySettings: cloneOverlaySettings(draft.overlaySettings),
+        }
+      : cloneOverlayProfile(profile));
+
+    await persistSettings({
+      ...draft,
+      overlayProfiles: profiles,
+      activeOverlayProfileId: activeOverlayProfile.id,
+    }, `Saved ${activeOverlayProfile.name}.`);
+  };
+
+  const saveOverlayProfileAs = async () => {
+    const name = window.prompt('Overlay profile name', getUniqueOverlayProfileName('New Overlay Profile', overlayProfiles))?.trim();
+    if (!name) {
+      return;
+    }
+
+    const profile: OverlayProfile = {
+      id: createOverlayProfileId(),
+      name: getUniqueOverlayProfileName(name, overlayProfiles),
+      overlaySettings: cloneOverlaySettings(draft.overlaySettings),
+    };
+
+    await persistSettings({
+      ...draft,
+      overlayProfiles: [...cloneOverlayProfiles(overlayProfiles), profile],
+      activeOverlayProfileId: profile.id,
+    }, `Created ${profile.name}.`);
   };
 
   const openSettings = () => {
@@ -693,7 +801,40 @@ function App() {
             ) : (
               <div className="overlay-workspace">
                 <div className="overlay-settings overlay-control-pane settings-tab-panel">
-                  <p className="tab-intro">Layout, typography, artwork, and container styling for the overlay.</p>
+                  <section className="overlay-profile-panel">
+                    <label className="overlay-profile-select">
+                      <span>Overlay Profile</span>
+                      <select
+                        value={activeOverlayProfile.id}
+                        disabled={saving}
+                        onChange={(event) => {
+                          void selectOverlayProfile(event.target.value);
+                        }}
+                      >
+                        {overlayProfiles.map((profile) => (
+                          <option key={profile.id} value={profile.id}>{profile.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <div className="overlay-profile-actions">
+                      <button className="icon-button button-secondary" type="button" disabled={saving || hasOverlayErrors} onClick={() => void saveOverlayProfile()} aria-label="Save overlay profile" title="Save">
+                        <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+                          <path d="M5 3h12l2 2v16H5z" />
+                          <path d="M8 3v6h8V3" />
+                          <path d="M8 15h8v6H8z" />
+                        </svg>
+                      </button>
+                      <button className="icon-button button-secondary" type="button" disabled={saving || hasOverlayErrors} onClick={() => void saveOverlayProfileAs()} aria-label="Save overlay profile as" title="Save As">
+                        <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
+                          <path d="M5 3h10l4 4v14H5z" />
+                          <path d="M8 3v6h7" />
+                          <path d="M8 15h5v6H8z" />
+                          <path d="M17 13v6" />
+                          <path d="M14 16h6" />
+                        </svg>
+                      </button>
+                    </div>
+                  </section>
                   <CollapsibleSection
                     title="Overlay behavior"
                     isOpen={overlaySections.behavior}
@@ -701,10 +842,13 @@ function App() {
                     actions={(
                       <button
                         className="button-ghost compact-button"
-                        onClick={() => setDraft({
-                          ...draft,
-                          overlaySettings: cloneOverlaySettings(defaultOverlaySettings),
-                        })}
+                        onClick={() => {
+                          setDraft({
+                            ...draft,
+                            overlaySettings: cloneOverlaySettings(defaultOverlaySettings),
+                          });
+                          window.dispatchEvent(new CustomEvent('tidereader-color-fields-reset'));
+                        }}
                         type="button"
                       >
                         Reset Overlay Styling to Defaults
@@ -945,7 +1089,7 @@ function App() {
                       <h4 className="mini-section-title">Border</h4>
                       <div className="field-grid settings-grid mini-section-grid">
                         <ToggleField
-                          className="field-span-medium"
+                          className="field-span-compact"
                           label="Border enabled"
                           checked={draft.overlaySettings.overlayContainerStyle.borderEnabled}
                           onChange={(value) => setDraft(updateOverlayContainer(draft, {
@@ -1095,10 +1239,10 @@ function CollapsibleSection({
 
 function ToggleField({ label, checked, onChange, className = '' }: { label: string; checked: boolean; onChange: (value: boolean) => void; className?: string }) {
   return (
-    <div className={`field toggle-field ${className}`.trim()}>
+    <label className={`toggle-field ${className}`.trim()}>
       <span>{label}</span>
-      <Toggle label={label} checked={checked} onChange={onChange} />
-    </div>
+      <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} />
+    </label>
   );
 }
 
@@ -1165,20 +1309,165 @@ function AngleField({ label, value, onChange, className = '' }: { label: string;
 }
 
 function ColorField({ label, value, invalid, onChange, className = '', inputClassName = '' }: { label: string; value: string; invalid: boolean; onChange: (value: string) => void; className?: string; inputClassName?: string }) {
+  const fieldId = useRef(`color-field-${Math.random().toString(16).slice(2)}`);
+  const fieldRef = useRef<HTMLDivElement | null>(null);
+  const swatchRef = useRef<HTMLButtonElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [inputValue, setInputValue] = useState(value);
+  const [popoverPosition, setPopoverPosition] = useState({ left: 0, top: 0 });
+  const normalizedValue = normalizeColorHex(value);
+  const pickerColor = normalizedValue ?? '#000000';
+  const inputInvalid = !isColorPickerHex(inputValue);
+  const labelId = `${fieldId.current}-label`;
+
+  const updatePopoverPosition = () => {
+    const swatch = swatchRef.current;
+    if (!swatch) {
+      return;
+    }
+
+    const popoverWidth = 242;
+    const popoverHeight = 210;
+    const margin = 12;
+    const gap = 8;
+    const rect = swatch.getBoundingClientRect();
+    const availableBelow = window.innerHeight - rect.bottom - margin;
+    const fitsBelow = availableBelow >= popoverHeight;
+    const top = fitsBelow
+      ? rect.bottom + gap
+      : Math.max(margin, rect.top - popoverHeight - gap);
+    const left = Math.min(
+      Math.max(margin, rect.left),
+      Math.max(margin, window.innerWidth - popoverWidth - margin),
+    );
+
+    setPopoverPosition({ left, top });
+  };
+
+  useEffect(() => {
+    setInputValue(value);
+  }, [value]);
+
+  useEffect(() => {
+    if (!pickerOpen) {
+      return;
+    }
+
+    const closeOnOutsideClick = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (!fieldRef.current?.contains(target) && !popoverRef.current?.contains(target)) {
+        setPickerOpen(false);
+      }
+    };
+    const closeOnEscape = (event: globalThis.KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setPickerOpen(false);
+      }
+    };
+    const closeWhenAnotherPickerOpens = (event: Event) => {
+      if (event instanceof CustomEvent && event.detail !== fieldId.current) {
+        setPickerOpen(false);
+      }
+    };
+
+    document.addEventListener('mousedown', closeOnOutsideClick);
+    document.addEventListener('keydown', closeOnEscape);
+    window.addEventListener('resize', updatePopoverPosition);
+    window.addEventListener('scroll', updatePopoverPosition, true);
+    window.addEventListener('tidereader-color-picker-open', closeWhenAnotherPickerOpens);
+    updatePopoverPosition();
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutsideClick);
+      document.removeEventListener('keydown', closeOnEscape);
+      window.removeEventListener('resize', updatePopoverPosition);
+      window.removeEventListener('scroll', updatePopoverPosition, true);
+      window.removeEventListener('tidereader-color-picker-open', closeWhenAnotherPickerOpens);
+    };
+  }, [pickerOpen]);
+
+  useEffect(() => {
+    const resetInputValue = () => setInputValue(value);
+    window.addEventListener('tidereader-color-fields-reset', resetInputValue);
+    return () => {
+      window.removeEventListener('tidereader-color-fields-reset', resetInputValue);
+    };
+  }, [value]);
+
+  const openPicker = () => {
+    window.dispatchEvent(new CustomEvent('tidereader-color-picker-open', { detail: fieldId.current }));
+    setPickerOpen(true);
+  };
+
+  const handleSwatchKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      openPicker();
+    }
+  };
+
+  const handleTextChange = (nextValue: string) => {
+    setInputValue(nextValue);
+    const normalized = normalizeColorHex(nextValue);
+    if (normalized !== null && normalized !== value) {
+      onChange(normalized);
+    }
+  };
+
+  const handlePickerChange = (nextValue: string) => {
+    const normalized = normalizeColorHex(nextValue);
+    if (normalized === null) {
+      return;
+    }
+
+    setInputValue(normalized);
+    onChange(normalized);
+  };
+
   return (
-    <label className={className}>
-      {label}
+    <div ref={fieldRef} className={`color-picker-field ${className}`.trim()}>
+      <span id={labelId} className="color-picker-label">{label}</span>
       <div className="color-field">
-        <span className={`color-swatch ${invalid ? 'invalid' : ''}`} style={{ backgroundColor: invalid ? 'transparent' : value }} aria-hidden="true" />
+        <button
+          ref={swatchRef}
+          type="button"
+          className={`color-swatch ${invalid || inputInvalid ? 'invalid' : ''}`}
+          style={{ backgroundColor: normalizedValue ?? 'transparent' }}
+          aria-label={`Open ${label} color picker`}
+          aria-expanded={pickerOpen}
+          onClick={openPicker}
+          onKeyDown={handleSwatchKeyDown}
+        >
+          <span id={`${fieldId.current}-swatch-label`} className="sr-only">color picker</span>
+        </button>
         <input
-          aria-invalid={invalid}
-          className={`${inputClassName} ${invalid ? 'invalid-field' : ''}`.trim()}
+          aria-label={label}
+          aria-invalid={inputInvalid}
+          className={`${inputClassName} ${inputInvalid ? 'invalid-field' : ''}`.trim()}
           type="text"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
+          value={inputValue}
+          spellCheck={false}
+          onChange={(event) => handleTextChange(event.target.value)}
+          onBlur={() => {
+            const normalized = normalizeColorHex(inputValue);
+            if (normalized !== null) {
+              setInputValue(normalized);
+            }
+          }}
         />
       </div>
-    </label>
+      {pickerOpen ? createPortal((
+        <div
+          ref={popoverRef}
+          className="color-picker-popover"
+          role="dialog"
+          aria-label={`${label} color picker`}
+          style={{ left: popoverPosition.left, top: popoverPosition.top }}
+        >
+          <HexColorPicker color={pickerColor} onChange={handlePickerChange} />
+        </div>
+      ), document.body) : null}
+    </div>
   );
 }
 

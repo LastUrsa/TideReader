@@ -1,4 +1,4 @@
-import type { DetectionResult, GradientSettings, OverlayContainerStyle, OverlaySettings, OverlayTextStyle, Settings, StatusPillStyle } from './api';
+import type { DetectionResult, GradientSettings, OverlayContainerStyle, OverlayProfile, OverlaySettings, OverlayTextStyle, Settings, StatusPillStyle } from './api';
 
 export const hexColorPattern = /^#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$/;
 export const gradientPresetOptions = [
@@ -129,6 +129,8 @@ export function createDefaultSettings(): Settings {
     metadataProviderMode: 'MusicBrainzWithFallbacks',
     themeMode: 'Dark',
     overlaySettings: cloneOverlaySettings(defaultOverlaySettings),
+    overlayProfiles: createDefaultOverlayProfiles(),
+    activeOverlayProfileId: 'default',
     browserSettings: {
       enabled: true,
       activeSourceMode: 'auto',
@@ -156,6 +158,16 @@ export function createDefaultSettings(): Settings {
   };
 }
 
+export function createDefaultOverlayProfiles(): OverlayProfile[] {
+  return [
+    {
+      id: 'default',
+      name: 'Default',
+      overlaySettings: cloneOverlaySettings(defaultOverlaySettings),
+    },
+  ];
+}
+
 export function cloneOverlaySettings(settings: OverlaySettings): OverlaySettings {
   return {
     ...settings,
@@ -168,6 +180,18 @@ export function cloneOverlaySettings(settings: OverlaySettings): OverlaySettings
     },
     statusPillStyle: { ...settings.statusPillStyle },
   };
+}
+
+export function cloneOverlayProfile(profile: OverlayProfile): OverlayProfile {
+  return {
+    id: profile.id,
+    name: profile.name,
+    overlaySettings: cloneOverlaySettings(profile.overlaySettings),
+  };
+}
+
+export function cloneOverlayProfiles(profiles: OverlayProfile[]): OverlayProfile[] {
+  return profiles.map(cloneOverlayProfile);
 }
 
 export function isValidHexColor(value: string): boolean {

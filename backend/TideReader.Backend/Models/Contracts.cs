@@ -112,6 +112,13 @@ public sealed class OverlaySettings
     public bool ShowPlaybackState { get; set; } = true;
 }
 
+public sealed class OverlayProfile
+{
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    public OverlaySettings OverlaySettings { get; set; } = new();
+}
+
 public sealed class BrowserSupportSettings
 {
     public bool ChromeEnabled { get; set; } = true;
@@ -162,6 +169,8 @@ public sealed class Settings
     public string MetadataProviderMode { get; set; } = nameof(Models.MetadataProviderMode.MusicBrainzWithFallbacks);
     public string ThemeMode { get; set; } = nameof(Models.ThemeMode.Dark);
     public OverlaySettings OverlaySettings { get; set; } = new();
+    public List<OverlayProfile> OverlayProfiles { get; set; } = [];
+    public string ActiveOverlayProfileId { get; set; } = "";
     public BrowserSettings BrowserSettings { get; set; } = new();
 }
 

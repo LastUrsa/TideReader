@@ -111,6 +111,80 @@ function createState(overrides?: Partial<AppState>): AppState {
         showAppName: true,
         showPlaybackState: true,
       },
+      overlayProfiles: [
+        {
+          id: 'default',
+          name: 'Default',
+          overlaySettings: {
+            songTextStyle: {
+              fontFamily: 'Segoe UI',
+              colorHex: '#EBEBEB',
+              fontSizePx: 24,
+              maxCharacters: 0,
+              bold: true,
+              italic: false,
+              underline: false,
+            },
+            artistTextStyle: {
+              fontFamily: 'Segoe UI',
+              colorHex: '#929498',
+              fontSizePx: 15,
+              maxCharacters: 0,
+              bold: false,
+              italic: false,
+              underline: false,
+            },
+            albumTextStyle: {
+              fontFamily: 'Segoe UI',
+              colorHex: '#929498',
+              fontSizePx: 15,
+              maxCharacters: 0,
+              bold: false,
+              italic: false,
+              underline: false,
+            },
+            imageSizePx: 68,
+            backgroundColorHex: '#32334F',
+            overlayContainerStyle: {
+              backgroundMode: 'solid',
+              backgroundColorHex: '#32334F',
+              gradient: {
+                colorCount: 3,
+                preset: 'Diagonal',
+                color1Hex: '#1F1F2E',
+                color2Hex: '#6B46C1',
+                color3Hex: '#111827',
+                angleDeg: 135,
+              },
+              opacity: 0.86,
+              cornerRadiusPx: 18,
+              paddingPx: 14,
+              gapPx: 14,
+              borderEnabled: true,
+              borderColorHex: '#929498',
+              borderWidthPx: 1,
+            },
+            statusPillStyle: {
+              backgroundColorHex: '#45475D',
+              textColorHex: '#787B80',
+              opacity: 1,
+              fontFamily: 'Segoe UI',
+              fontSizePx: 11,
+              bold: false,
+              italic: false,
+              underline: false,
+              cornerRadiusPx: 999,
+              paddingHorizontalPx: 9,
+              paddingVerticalPx: 4,
+            },
+            imagePosition: 'Left',
+            textAlign: 'Left',
+            showAppName: true,
+            showPlaybackState: true,
+          },
+        },
+      ],
+      activeOverlayProfileId: 'default',
       browserSettings: {
         enabled: true,
         activeSourceMode: 'auto',
@@ -498,7 +572,7 @@ describe('App', () => {
         }),
         statusPillStyle: expect.objectContaining({
           backgroundColorHex: '#334455',
-          textColorHex: '#FFEEDD',
+          textColorHex: '#ffeedd',
           opacity: 0.9,
         }),
         imagePosition: 'Right',
@@ -519,6 +593,90 @@ describe('App', () => {
     expect(screen.getByText('Live Preview')).toBeInTheDocument();
     expect(screen.getAllByText('Sample Track').length).toBeGreaterThan(0);
     expect(screen.queryByRole('button', { name: 'Copy OBS Overlay URL' })).not.toBeInTheDocument();
+  });
+
+  it('opens and closes color picker popovers from swatches', async () => {
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Sample Track' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Overlay' }));
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open Background color color picker' })[0]);
+    expect(screen.getByRole('dialog', { name: 'Background color color picker' })).toBeInTheDocument();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByRole('dialog', { name: 'Background color color picker' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Open Background color color picker' })[0]);
+    expect(screen.getByRole('dialog', { name: 'Background color color picker' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open Text color color picker' }));
+    expect(screen.queryByRole('dialog', { name: 'Background color color picker' })).not.toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Text color color picker' })).toBeInTheDocument();
+
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole('dialog', { name: 'Text color color picker' })).not.toBeInTheDocument();
+  });
+
+  it('applies an overlay profile through the settings save API', async () => {
+    const baseState = createState();
+    const profileSettings = {
+      ...baseState.settings.overlaySettings,
+      imagePosition: 'Right' as const,
+      textAlign: 'Right' as const,
+      showAppName: false,
+    };
+    const state = createState({
+      settings: {
+        ...baseState.settings,
+        overlayProfiles: [
+          baseState.settings.overlayProfiles[0],
+          {
+            id: 'minimal',
+            name: 'Minimal Overlay',
+            overlaySettings: profileSettings,
+          },
+        ],
+      },
+    });
+    apiMocks.getState.mockResolvedValue(state);
+    apiMocks.saveSettings.mockImplementation(async (settings) => createState({ settings }));
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Sample Track' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Overlay' }));
+    fireEvent.change(screen.getByLabelText('Overlay Profile'), { target: { value: 'minimal' } });
+
+    await waitFor(() => expect(apiMocks.saveSettings).toHaveBeenCalled());
+    const saved = apiMocks.saveSettings.mock.calls.at(-1)?.[0];
+    expect(saved.activeOverlayProfileId).toBe('minimal');
+    expect(saved.overlaySettings.imagePosition).toBe('Right');
+    expect(saved.overlaySettings.textAlign).toBe('Right');
+    expect(saved.overlaySettings.showAppName).toBe(false);
+  });
+
+  it('saves the current overlay as a unique profile name', async () => {
+    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('Default');
+    apiMocks.saveSettings.mockImplementation(async (settings) => createState({ settings }));
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Sample Track' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Overlay' }));
+    fireEvent.change(screen.getByLabelText('Artwork position'), { target: { value: 'Right' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save overlay profile as' }));
+
+    await waitFor(() => expect(apiMocks.saveSettings).toHaveBeenCalled());
+    const saved = apiMocks.saveSettings.mock.calls.at(-1)?.[0];
+    expect(saved.activeOverlayProfileId).not.toBe('default');
+    expect(saved.overlayProfiles).toHaveLength(2);
+    expect(saved.overlayProfiles[1].name).toBe('Default 2');
+    expect(saved.overlayProfiles[1].overlaySettings.imagePosition).toBe('Right');
+    promptSpy.mockRestore();
   });
 
   it('copies the overlay url from overlay behavior', async () => {
@@ -641,7 +799,8 @@ describe('App', () => {
     fireEvent.change(screen.getAllByLabelText('Hex color')[0], {
       target: { value: 'bad-color' },
     });
-    expect(screen.getByText(/Enter a valid font family, positive font size/)).toBeInTheDocument();
+    expect(screen.getAllByLabelText('Hex color')[0]).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.queryByText(/Enter a valid font family, positive font size/)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Reset Overlay Styling to Defaults' }));
 
@@ -739,7 +898,7 @@ describe('App', () => {
           }),
         }),
         statusPillStyle: expect.objectContaining({
-          textColorHex: '#C0FFEE',
+          textColorHex: '#c0ffee',
           fontFamily: 'Arial',
           fontSizePx: 14,
           cornerRadiusPx: 12,
@@ -769,18 +928,42 @@ describe('App', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Saving...' })).not.toBeInTheDocument());
   });
 
-  it('disables save when overlay hex colors are invalid', async () => {
+  it('rejects invalid manual color edits without disabling save', async () => {
     render(<App />);
 
     await screen.findByRole('heading', { name: 'Sample Track' });
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
     fireEvent.click(screen.getByRole('tab', { name: 'Overlay' }));
-    fireEvent.change(screen.getAllByLabelText('Background color')[0], {
+    const backgroundColor = screen.getAllByLabelText('Background color')[0];
+    fireEvent.change(backgroundColor, {
       target: { value: 'not-a-color' },
     });
 
-    expect(screen.getAllByLabelText('Background color')[0]).toHaveAttribute('aria-invalid', 'true');
-    expect(screen.getByRole('button', { name: 'Save settings' })).toBeDisabled();
+    expect(backgroundColor).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('button', { name: 'Save settings' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+
+    await waitFor(() => expect(apiMocks.saveSettings).toHaveBeenCalled());
+    expect(apiMocks.saveSettings.mock.calls.at(-1)?.[0].overlaySettings.overlayContainerStyle.backgroundColorHex).toBe('#32334F');
+  });
+
+  it('normalizes short manual color edits before saving', async () => {
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Sample Track' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Overlay' }));
+    const backgroundColor = screen.getAllByLabelText('Background color')[0];
+    fireEvent.change(backgroundColor, {
+      target: { value: '#abc' },
+    });
+    fireEvent.blur(backgroundColor);
+
+    expect(backgroundColor).toHaveValue('#aabbcc');
+    fireEvent.click(screen.getByRole('button', { name: 'Save settings' }));
+
+    await waitFor(() => expect(apiMocks.saveSettings).toHaveBeenCalled());
+    expect(apiMocks.saveSettings.mock.calls.at(-1)?.[0].overlaySettings.overlayContainerStyle.backgroundColorHex).toBe('#aabbcc');
   });
 
   it('disables save when character limits are negative', async () => {

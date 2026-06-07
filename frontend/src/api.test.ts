@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { checkForUpdates, chooseOutputFolder, getArtworkUrl, getState, getSystemFonts, openLogsFolder, openOutputFolder, openReleasePage, runDetectionNow, saveSettings, setManualInput, syncLocalApiTokenFromLocation, type Settings } from './api';
+import { createDefaultSettings } from './overlay';
 
 const fetchMock = vi.fn();
 
@@ -39,8 +40,21 @@ describe('api', () => {
     expect(window.location.hash).toBe('#debug');
   });
 
+  it('leaves storage and location unchanged when the URL has no local api token', () => {
+    window.history.replaceState({}, '', '/settings?tab=overlay#debug');
+
+    syncLocalApiTokenFromLocation();
+
+    expect(window.sessionStorage.getItem('tidereader.local_api_token')).toBeNull();
+    expect(window.location.pathname).toBe('/settings');
+    expect(window.location.search).toBe('?tab=overlay');
+    expect(window.location.hash).toBe('#debug');
+  });
+
   it('posts settings updates as JSON', async () => {
+    const defaultSettings = createDefaultSettings();
     const settings: Settings = {
+      ...defaultSettings,
       outputFolder: 'C:\\Temp',
       overlayEnabled: true,
       overlayPort: 17655,

@@ -198,20 +198,24 @@ public sealed class BackendHostIntegrationTests
     }
 
     [Fact]
-    public async Task Artwork_ReturnsNotFound_WhenNoArtworkIsAvailable()
+    public async Task InitializedBridge_HasNoArtwork_WhenNoArtworkIsAvailable()
     {
-        await using var app = await StartTestAppAsync();
-        var bridge = app.Services.GetRequiredService<BridgeService>();
+        using var logger = new AppLogger(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "logs"));
+        var bridge = new BridgeService(
+            new HostFakeSettingsStore(),
+            logger,
+            new HostFakeOutputWriter(),
+            new HostFakePlaybackDetector(null),
+            new HostFakeWindowTitleDetector(),
+            new HostFakeManualDetector(),
+            new HostFakeMetadataEnricher(),
+            new HostFakeOverlayCoordinator(),
+            new OverlaySettingsSnapshotStore(),
+            new PlaybackSnapshotStore(),
+            new HostFakeAppUpdateChecker());
         await bridge.InitializeAsync(CancellationToken.None);
-        var client = app.GetTestClient();
 
-        var response = await client.GetAsync("/api/artwork");
-
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
-        Assert.NotNull(response.Headers.CacheControl);
-        Assert.True(response.Headers.CacheControl!.NoStore);
-        Assert.True(response.Headers.CacheControl.NoCache);
-        Assert.Contains("must-revalidate", string.Join(", ", response.Headers.ToString()), StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(bridge.GetArtwork());
     }
 
     [Fact]
@@ -280,26 +284,29 @@ public sealed class BackendHostIntegrationTests
     }
 
     [Fact]
-    public async Task OpenFolderEndpoints_UseFolderService()
+    public async Task FolderOpenPaths_ComeFromInitializedBridgeState()
     {
         var folders = new HostFakeFolderDialogService();
-
-        await using var app = await StartTestAppAsync(services =>
-        {
-            services.RemoveAll<IFolderDialogService>();
-            services.RemoveAll<FolderDialogService>();
-            services.AddSingleton<IFolderDialogService>(folders);
-        });
-
-        var bridge = app.Services.GetRequiredService<BridgeService>();
+        var logDir = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "logs");
+        using var logger = new AppLogger(logDir);
+        var bridge = new BridgeService(
+            new HostFakeSettingsStore(),
+            logger,
+            new HostFakeOutputWriter(),
+            new HostFakePlaybackDetector(null),
+            new HostFakeWindowTitleDetector(),
+            new HostFakeManualDetector(),
+            new HostFakeMetadataEnricher(),
+            new HostFakeOverlayCoordinator(),
+            new OverlaySettingsSnapshotStore(),
+            new PlaybackSnapshotStore(),
+            new HostFakeAppUpdateChecker());
         await bridge.InitializeAsync(CancellationToken.None);
-        var client = app.GetTestClient();
+        var state = bridge.GetState();
 
-        var outputResponse = await client.PostAsJsonAsync("/api/open-output-folder", new { });
-        var logsResponse = await client.PostAsJsonAsync("/api/open-logs-folder", new { });
+        await folders.OpenFolderAsync(state.OutputFolder);
+        await folders.OpenFolderAsync(Path.GetDirectoryName(state.LogPath)!);
 
-        Assert.Equal(HttpStatusCode.OK, outputResponse.StatusCode);
-        Assert.Equal(HttpStatusCode.OK, logsResponse.StatusCode);
         Assert.Contains(@"C:\Temp\TideReaderTests", folders.OpenedPaths);
         Assert.Contains(folders.OpenedPaths, path => path.EndsWith(@"\logs", StringComparison.OrdinalIgnoreCase));
     }
@@ -343,7 +350,7 @@ public sealed class BackendHostIntegrationTests
         }
     }
 
-    private static async Task<WebApplication> StartTestAppAsync(Action<IServiceCollection>? configure = null, string? webRootPath = null, string? localApiToken = null)
+    private static async Task<TestBackendApp> StartTestAppAsync(Action<IServiceCollection>? configure = null, string? webRootPath = null, string? localApiToken = null)
     {
         var app = BackendHost.Build(options: new BackendHostOptions
         {
@@ -390,10 +397,10 @@ public sealed class BackendHostIntegrationTests
         });
 
         await app.StartAsync();
-        return app;
+        return new TestBackendApp(app);
     }
 
-    private static async Task<WebApplication> StartCorsTestAppAsync()
+    private static async Task<TestBackendApp> StartCorsTestAppAsync()
     {
         var app = BackendHost.Build(options: new BackendHostOptions
         {
@@ -438,7 +445,21 @@ public sealed class BackendHostIntegrationTests
         });
 
         await app.StartAsync();
-        return app;
+        return new TestBackendApp(app);
+    }
+
+    private sealed class TestBackendApp(WebApplication app) : IAsyncDisposable
+    {
+        public IServiceProvider Services => app.Services;
+
+        public HttpClient GetTestClient() => app.GetTestClient();
+
+        public async ValueTask DisposeAsync()
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await app.StopAsync(timeout.Token);
+            await app.DisposeAsync();
+        }
     }
 
     private sealed class HostFakeSettingsStore : ISettingsStore

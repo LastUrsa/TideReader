@@ -16,6 +16,10 @@ namespace TideReader.Desktop;
 public partial class App : Application
 {
     private const string ApiUrl = "http://127.0.0.1:17656";
+    private static readonly bool KeepWindowVisible = string.Equals(
+        Environment.GetEnvironmentVariable("TIDEREADER_KEEP_WINDOW_VISIBLE"),
+        "1",
+        StringComparison.Ordinal);
     private static readonly string LocalApiToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
     private readonly CancellationTokenSource _shutdownCts = new();
     private readonly IStartupRegistration _startupRegistration = new StartupRegistrationService(new RegistryRunKeyFactory());
@@ -221,6 +225,11 @@ public partial class App : Application
 
     private void OnWindowStateChanged(object? sender, EventArgs e)
     {
+        if (KeepWindowVisible)
+        {
+            return;
+        }
+
         if (_window?.WindowState == WindowState.Minimized)
         {
             _window.Hide();
@@ -229,6 +238,11 @@ public partial class App : Application
 
     private void OnWindowClosing(object? sender, System.ComponentModel.CancelEventArgs e)
     {
+        if (KeepWindowVisible)
+        {
+            return;
+        }
+
         if (_explicitExit)
         {
             return;

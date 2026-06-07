@@ -141,7 +141,23 @@ public sealed class SettingsStoreTests
                     TextAlign = "Center",
                     ShowAppName = false,
                     ShowPlaybackState = false
-                }
+                },
+                ActiveOverlayProfileId = "showcase",
+                OverlayProfiles =
+                [
+                    new TideReader.Backend.Models.OverlayProfile
+                    {
+                        Id = "showcase",
+                        Name = "Album Showcase",
+                        OverlaySettings = new TideReader.Backend.Models.OverlaySettings
+                        {
+                            ImageSizePx = 120,
+                            ImagePosition = "Right",
+                            TextAlign = "Center",
+                            ShowAppName = false
+                        }
+                    }
+                ]
             };
 
             await store.SaveAsync(input, CancellationToken.None);
@@ -189,6 +205,11 @@ public sealed class SettingsStoreTests
             Assert.Equal(input.OverlaySettings.TextAlign, loaded.OverlaySettings.TextAlign);
             Assert.Equal(input.OverlaySettings.ShowAppName, loaded.OverlaySettings.ShowAppName);
             Assert.Equal(input.OverlaySettings.ShowPlaybackState, loaded.OverlaySettings.ShowPlaybackState);
+            Assert.Equal(input.ActiveOverlayProfileId, loaded.ActiveOverlayProfileId);
+            Assert.Single(loaded.OverlayProfiles);
+            Assert.Equal("Album Showcase", loaded.OverlayProfiles[0].Name);
+            Assert.Equal(120, loaded.OverlayProfiles[0].OverlaySettings.ImageSizePx);
+            Assert.Equal("Right", loaded.OverlayProfiles[0].OverlaySettings.ImagePosition);
         }
         finally
         {

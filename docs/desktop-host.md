@@ -28,6 +28,8 @@ Development keeps the HTTP API boundary but allows the UI to run from Vite.
 
 When `TIDAL_DESKTOP_DEV_SERVER_URL` is set, WebView2 navigates to that URL and the backend enables CORS for that origin only. Production does not depend on Vite.
 
+Set `TIDEREADER_KEEP_WINDOW_VISIBLE=1` while iterating on the desktop shell when the window needs to stay visible. With that flag enabled, minimize and close requests do not hide the app to the tray.
+
 ## Production Flow
 
 Production requires a frontend build before publishing the desktop app.

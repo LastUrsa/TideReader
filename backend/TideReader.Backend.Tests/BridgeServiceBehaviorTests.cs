@@ -784,8 +784,141 @@ public sealed class BridgeServiceBehaviorTests
         Assert.Equal("Left", state.Settings.OverlaySettings.TextAlign);
         Assert.True(state.Settings.OverlaySettings.ShowAppName);
         Assert.True(state.Settings.OverlaySettings.ShowPlaybackState);
+        Assert.Equal("default", state.Settings.ActiveOverlayProfileId);
+        Assert.Single(state.Settings.OverlayProfiles);
+        Assert.Equal("Default", state.Settings.OverlayProfiles[0].Name);
+        Assert.Equal(state.Settings.OverlaySettings.ImageSizePx, state.Settings.OverlayProfiles[0].OverlaySettings.ImageSizePx);
         Assert.Equal("overlay failed", state.LastError);
         Assert.Equal(state.Settings.OutputFolder, harness.Settings.OutputFolder);
+    }
+
+    [Fact]
+    public async Task SaveSettingsAsync_NormalizesOverlayProfiles()
+    {
+        using var harness = new BridgeServiceHarness();
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        var state = await harness.Service.SaveSettingsAsync(new Settings
+        {
+            OutputFolder = harness.Settings.OutputFolder,
+            OverlaySettings = new OverlaySettings
+            {
+                ImageSizePx = 80,
+                ImagePosition = "Right",
+                TextAlign = "Center",
+                OverlayContainerStyle = new OverlayContainerStyle
+                {
+                    BackgroundMode = "gradient",
+                    Gradient = new GradientSettings
+                    {
+                        ColorCount = 3,
+                        Preset = "Stream Neon",
+                        Color1Hex = "#111111",
+                        Color2Hex = "#222222",
+                        Color3Hex = "#333333",
+                        AngleDeg = 120
+                    }
+                }
+            },
+            ActiveOverlayProfileId = "missing",
+            OverlayProfiles =
+            [
+                new OverlayProfile
+                {
+                    Id = "  ",
+                    Name = "  ",
+                    OverlaySettings = new OverlaySettings
+                    {
+                        ImageSizePx = -1,
+                        ImagePosition = "sideways",
+                        TextAlign = "diagonal",
+                        OverlayContainerStyle = new OverlayContainerStyle
+                        {
+                            BackgroundMode = "static",
+                            BackgroundColorHex = "bad",
+                            Gradient = new GradientSettings
+                            {
+                                ColorCount = 4,
+                                Preset = "Unknown",
+                                Color1Hex = "bad",
+                                Color2Hex = "",
+                                Color3Hex = "nope",
+                                AngleDeg = 999
+                            },
+                            Opacity = 3,
+                            CornerRadiusPx = -1,
+                            PaddingPx = -1,
+                            GapPx = -1,
+                            BorderColorHex = "bad",
+                            BorderWidthPx = -1
+                        }
+                    }
+                },
+                new OverlayProfile
+                {
+                    Id = "wide",
+                    Name = " Wide Layout ",
+                    OverlaySettings = new OverlaySettings
+                    {
+                        ImageSizePx = 120,
+                        ImagePosition = "Right",
+                        TextAlign = "Right"
+                    }
+                }
+            ]
+        }, CancellationToken.None);
+
+        Assert.Equal(state.Settings.OverlayProfiles[0].Id, state.Settings.ActiveOverlayProfileId);
+        Assert.Equal(2, state.Settings.OverlayProfiles.Count);
+        Assert.False(string.IsNullOrWhiteSpace(state.Settings.OverlayProfiles[0].Id));
+        Assert.Equal("Overlay Profile 1", state.Settings.OverlayProfiles[0].Name);
+        Assert.Equal(68, state.Settings.OverlayProfiles[0].OverlaySettings.ImageSizePx);
+        Assert.Equal("Left", state.Settings.OverlayProfiles[0].OverlaySettings.ImagePosition);
+        Assert.Equal("Left", state.Settings.OverlayProfiles[0].OverlaySettings.TextAlign);
+        Assert.Equal("solid", state.Settings.OverlayProfiles[0].OverlaySettings.OverlayContainerStyle.BackgroundMode);
+        Assert.Equal("#32334F", state.Settings.OverlayProfiles[0].OverlaySettings.OverlayContainerStyle.BackgroundColorHex);
+        Assert.Equal(0.86, state.Settings.OverlayProfiles[0].OverlaySettings.OverlayContainerStyle.Opacity);
+        Assert.Equal(18, state.Settings.OverlayProfiles[0].OverlaySettings.OverlayContainerStyle.CornerRadiusPx);
+        Assert.Equal("wide", state.Settings.OverlayProfiles[1].Id);
+        Assert.Equal("Wide Layout", state.Settings.OverlayProfiles[1].Name);
+        Assert.Equal(120, state.Settings.OverlayProfiles[1].OverlaySettings.ImageSizePx);
+        Assert.Equal("Right", state.Settings.OverlayProfiles[1].OverlaySettings.ImagePosition);
+        Assert.Equal("Right", state.Settings.OverlayProfiles[1].OverlaySettings.TextAlign);
+        Assert.Equal(state.Settings.ActiveOverlayProfileId, harness.Settings.ActiveOverlayProfileId);
+        Assert.Equal(2, harness.Settings.OverlayProfiles.Count);
+    }
+
+    [Fact]
+    public async Task GetState_ClonesOverlayProfiles()
+    {
+        using var harness = new BridgeServiceHarness();
+        harness.Settings.OverlayProfiles =
+        [
+            new OverlayProfile
+            {
+                Id = "showcase",
+                Name = "Showcase",
+                OverlaySettings = new OverlaySettings
+                {
+                    ImageSizePx = 112,
+                    OverlayContainerStyle = new OverlayContainerStyle
+                    {
+                        Gradient = new GradientSettings()
+                    }
+                }
+            }
+        ];
+        harness.Settings.ActiveOverlayProfileId = "showcase";
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        var state = harness.Service.GetState();
+
+        state.Settings.OverlayProfiles[0].Name = "Changed";
+        state.Settings.OverlayProfiles[0].OverlaySettings.ImageSizePx = 32;
+
+        var nextState = harness.Service.GetState();
+        Assert.Equal("Showcase", nextState.Settings.OverlayProfiles[0].Name);
+        Assert.Equal(112, nextState.Settings.OverlayProfiles[0].OverlaySettings.ImageSizePx);
     }
 
     [Fact]
@@ -1492,6 +1625,8 @@ public sealed class BridgeServiceBehaviorTests
             settings.MetadataProviderMode = updated.MetadataProviderMode;
             settings.ThemeMode = updated.ThemeMode;
             settings.OverlaySettings = updated.OverlaySettings;
+            settings.OverlayProfiles = updated.OverlayProfiles;
+            settings.ActiveOverlayProfileId = updated.ActiveOverlayProfileId;
             return Task.CompletedTask;
         }
     }

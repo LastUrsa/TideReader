@@ -350,6 +350,41 @@ public sealed class BackendHostIntegrationTests
         }
     }
 
+    [Fact]
+    public async Task PollingWorker_StartAsync_ReturnsPromptly_WhenFirstDetectionBlocksSynchronously()
+    {
+        using var logger = new AppLogger(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "logs"));
+        var outputFolder = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "output");
+        var bridge = new BridgeService(
+            new HostFakeSettingsStore(outputFolder),
+            logger,
+            new HostFakeOutputWriter(),
+            new BlockingPlaybackDetector(),
+            new HostFakeWindowTitleDetector(),
+            new HostFakeManualDetector(),
+            new HostFakeMetadataEnricher(),
+            new HostFakeOverlayCoordinator(),
+            new OverlaySettingsSnapshotStore(),
+            new PlaybackSnapshotStore(),
+            new HostFakeAppUpdateChecker());
+        var worker = new PollingWorker(bridge);
+
+        await worker.StartAsync(CancellationToken.None).WaitAsync(TimeSpan.FromSeconds(1));
+
+        try
+        {
+            using var shutdown = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            await worker.StopAsync(shutdown.Token);
+        }
+        finally
+        {
+            if (Directory.Exists(outputFolder))
+            {
+                Directory.Delete(outputFolder, true);
+            }
+        }
+    }
+
     private static async Task<TestBackendApp> StartTestAppAsync(Action<IServiceCollection>? configure = null, string? webRootPath = null, string? localApiToken = null)
     {
         var app = BackendHost.Build(options: new BackendHostOptions
@@ -462,11 +497,25 @@ public sealed class BackendHostIntegrationTests
         }
     }
 
-    private sealed class HostFakeSettingsStore : ISettingsStore
+    private sealed class BlockingPlaybackDetector : IPlaybackDetector
+    {
+        public Task<PlaybackDetectionOutcome> DetectAsync(DetectionResult previous, Settings settings, CancellationToken cancellationToken)
+        {
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                Thread.Sleep(25);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(new PlaybackDetectionOutcome(null, new BrowserDebugState()));
+        }
+    }
+
+    private sealed class HostFakeSettingsStore(string? outputFolder = null) : ISettingsStore
     {
         public Task<Settings> LoadAsync(CancellationToken cancellationToken) => Task.FromResult(new Settings
         {
-            OutputFolder = @"C:\Temp\TideReaderTests",
+            OutputFolder = outputFolder ?? @"C:\Temp\TideReaderTests",
             OverlayEnabled = false,
             EnableWindowTitleFallback = false,
             EnableDebugManualInput = false,

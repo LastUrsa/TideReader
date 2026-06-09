@@ -4,6 +4,7 @@
     <Project Path="backend/TideReader.Backend/TideReader.Backend.csproj" />
   </Folder>
   <Folder Name="/desktop/">
+    <Project Path="desktop/TideReader.Desktop.Tests/TideReader.Desktop.Tests.csproj" />
     <Project Path="desktop/TideReader.Desktop/TideReader.Desktop.csproj" />
   </Folder>
 </Solution>

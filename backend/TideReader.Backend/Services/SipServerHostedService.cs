@@ -12,15 +12,18 @@ public sealed class SipServerHostedService(BridgeService bridgeService, IAppUpda
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        logger.Info($"sip bind scan starting: ports {FirstPort}-{LastPort}");
         for (var port = FirstPort; port <= LastPort; port++)
         {
+            logger.Info($"sip app build starting: {port}");
             var app = BuildSipApp(port);
             try
             {
+                logger.Info($"sip bind attempt: {port}");
                 await app.StartAsync(cancellationToken);
                 _app = app;
                 var address = app.Urls.FirstOrDefault() ?? $"http://127.0.0.1:{port}";
-                logger.Info($"sip started: {address}");
+                logger.Info($"sip ready: {address}");
                 return;
             }
             catch (IOException ex)
@@ -28,8 +31,15 @@ public sealed class SipServerHostedService(BridgeService bridgeService, IAppUpda
                 logger.Info($"sip port unavailable: {port} {ex.Message}");
                 await app.DisposeAsync();
             }
+            catch (Exception ex)
+            {
+                logger.Info($"sip bind failed: {port} {ex}");
+                await app.DisposeAsync();
+                throw;
+            }
         }
 
+        logger.Info("sip bind failed: no ports available");
         throw new InvalidOperationException("No TideReader SIP port is available.");
     }
 
@@ -55,7 +65,8 @@ public sealed class SipServerHostedService(BridgeService bridgeService, IAppUpda
     {
         var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions
         {
-            ApplicationName = typeof(SipServerHostedService).Assembly.FullName
+            ApplicationName = typeof(SipServerHostedService).Assembly.FullName,
+            ContentRootPath = ResolveContentRoot(AppContext.BaseDirectory)
         });
         builder.WebHost.UseUrls($"http://127.0.0.1:{port}");
         builder.WebHost.ConfigureKestrel(options =>
@@ -70,5 +81,22 @@ public sealed class SipServerHostedService(BridgeService bridgeService, IAppUpda
         var app = builder.Build();
         SipHttpApi.Configure(app);
         return app;
+    }
+
+    private static string ResolveContentRoot(string baseDirectory)
+    {
+        var contentRoot = Path.GetFullPath(baseDirectory);
+        if (!contentRoot.StartsWith(@"\\", StringComparison.Ordinal))
+        {
+            return contentRoot;
+        }
+
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var fallback = string.IsNullOrWhiteSpace(appData)
+            ? Path.GetTempPath()
+            : appData;
+        contentRoot = Path.Combine(fallback, "TideReader", "content-root");
+        Directory.CreateDirectory(contentRoot);
+        return contentRoot;
     }
 }

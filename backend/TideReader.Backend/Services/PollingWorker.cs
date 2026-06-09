@@ -4,6 +4,7 @@ public sealed class PollingWorker(BridgeService bridgeService) : BackgroundServi
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        await Task.Yield();
         await bridgeService.InitializeAsync(stoppingToken);
 
         while (!stoppingToken.IsCancellationRequested)

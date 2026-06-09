@@ -15,6 +15,7 @@ public sealed class BackendHostOptions
     public bool UseTestServer { get; init; }
     public bool EnableSipServer { get; init; } = true;
     public string RuntimeMode { get; init; } = SipRuntimeModes.Standalone;
+    public Action<string>? StartupLog { get; init; }
     public Action<IServiceCollection>? ConfigureTestServices { get; init; }
 }
 
@@ -26,16 +27,22 @@ public static class BackendHost
     public static WebApplication Build(string[]? args = null, BackendHostOptions? options = null)
     {
         options ??= new BackendHostOptions();
+        options.StartupLog?.Invoke("BackendHost.Build: resolving web root");
         var webRootPath = ResolveWebRoot(options.WebRootPath);
+        var contentRootPath = ResolveContentRoot(AppContext.BaseDirectory);
+        options.StartupLog?.Invoke($"BackendHost.Build: webRootPath={(webRootPath ?? "none")}");
 
         var builderOptions = new WebApplicationOptions
         {
             Args = args ?? [],
             ApplicationName = typeof(BackendHost).Assembly.FullName,
+            ContentRootPath = contentRootPath,
             WebRootPath = IsUncPath(webRootPath) ? null : webRootPath
         };
 
+        options.StartupLog?.Invoke($"BackendHost.Build: creating WebApplicationBuilder contentRoot={builderOptions.ContentRootPath}");
         var builder = WebApplication.CreateBuilder(builderOptions);
+        options.StartupLog?.Invoke("BackendHost.Build: WebApplicationBuilder created");
         if (options.UseTestServer)
         {
             builder.WebHost.UseTestServer();
@@ -45,10 +52,16 @@ public static class BackendHost
             builder.WebHost.UseUrls(options.ApiUrl);
         }
 
+        options.StartupLog?.Invoke("BackendHost.Build: configuring services");
         ConfigureServices(builder.Services, options);
+        options.StartupLog?.Invoke("BackendHost.Build: services configured");
 
+        options.StartupLog?.Invoke("BackendHost.Build: builder.Build starting");
         var app = builder.Build();
+        options.StartupLog?.Invoke("BackendHost.Build: builder.Build completed");
+        options.StartupLog?.Invoke("BackendHost.Build: pipeline configuring");
         ConfigurePipeline(app, options);
+        options.StartupLog?.Invoke("BackendHost.Build: pipeline configured");
         return app;
     }
 
@@ -237,6 +250,23 @@ public static class BackendHost
         }
 
         return Path.GetFullPath(webRootPath);
+    }
+
+    private static string ResolveContentRoot(string baseDirectory)
+    {
+        var contentRoot = Path.GetFullPath(baseDirectory);
+        if (!IsUncPath(contentRoot))
+        {
+            return contentRoot;
+        }
+
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        var fallback = string.IsNullOrWhiteSpace(appData)
+            ? Path.GetTempPath()
+            : appData;
+        contentRoot = Path.Combine(fallback, "TideReader", "content-root");
+        Directory.CreateDirectory(contentRoot);
+        return contentRoot;
     }
 
     private static bool HasBundledFrontend(string? webRootPath)

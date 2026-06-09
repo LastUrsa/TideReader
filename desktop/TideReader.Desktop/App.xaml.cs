@@ -1,6 +1,7 @@
 using System.Drawing;
 using System.IO;
 using System.IO.Pipes;
+using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
 using System.Windows;
@@ -18,6 +19,10 @@ namespace TideReader.Desktop;
 public partial class App : Application
 {
     private const string ApiUrl = "http://127.0.0.1:17656";
+    private static readonly TimeSpan BackendBuildTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan BackendStartTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan ServiceReadinessTimeout = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan ServiceReadinessPollInterval = TimeSpan.FromMilliseconds(250);
     private static readonly bool KeepWindowVisible = string.Equals(
         Environment.GetEnvironmentVariable("TIDEREADER_KEEP_WINDOW_VISIBLE"),
         "1",
@@ -42,40 +47,67 @@ public partial class App : Application
         try
         {
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            StartupDiagnostics.Info($"startup begin: args=\"{string.Join(" ", e.Args)}\"");
             _launchConfig = LaunchConfig.Parse(e.Args);
+            StartupDiagnostics.Info($"launch parsed: serviceMode={_launchConfig.ServiceMode} shouldActivateExisting={_launchConfig.ShouldActivateExisting}");
+            StartupDiagnostics.Info("single-instance acquisition starting");
             if (!AcquireSingleInstance())
             {
+                StartupDiagnostics.Info("single-instance acquisition failed: another instance owns the mutex");
                 if (_launchConfig.ShouldActivateExisting)
                 {
+                    StartupDiagnostics.Info("sending show signal to existing instance");
                     await SendShowSignalAsync();
                 }
 
                 Shutdown();
                 return;
             }
+            StartupDiagnostics.Info("single-instance acquisition succeeded");
 
             _showSignalTask = ListenForShowSignalsAsync(_shutdownCts.Token);
 
+            StartupDiagnostics.Info("settings load starting");
             var initialSettings = await LoadInitialSettingsAsync(_shutdownCts.Token);
-            _backendApp = await Task.Run(() => BackendHost.Build([], CreateBackendOptions(_launchConfig)), _shutdownCts.Token);
-            await _backendApp.StartAsync(_shutdownCts.Token);
+            StartupDiagnostics.Info($"settings load completed: launchAtStartup={initialSettings.LaunchAtStartup} startMinimized={initialSettings.StartMinimized}");
+            StartupDiagnostics.Info("BackendHost.Build starting");
+            _backendApp = await BuildBackendWithTimeoutAsync(_launchConfig, _shutdownCts.Token);
+            StartupDiagnostics.Info("BackendHost.Build completed");
+            StartupDiagnostics.Info("_backendApp.StartAsync starting");
+            await StartBackendWithTimeoutAsync(_backendApp, _shutdownCts.Token);
+            StartupDiagnostics.Info("_backendApp.StartAsync completed");
+
+            if (_launchConfig.ServiceMode)
+            {
+                StartupDiagnostics.Info("service readiness check starting");
+                await EnsureServiceReadyAsync(_shutdownCts.Token);
+                StartupDiagnostics.Info("service readiness check completed");
+            }
 
             _bridgeService = _backendApp.Services.GetRequiredService<BridgeService>();
             _bridgeService.SettingsChanged += OnSettingsChanged;
+            StartupDiagnostics.Info("startup registration sync starting");
             _startupRegistration.Sync(initialSettings.LaunchAtStartup);
+            StartupDiagnostics.Info("startup registration sync completed");
 
             if (!_launchConfig.ServiceMode)
             {
+                StartupDiagnostics.Info("main window initialization starting");
                 await EnsureMainWindowAsync(initialSettings.StartMinimized);
+                StartupDiagnostics.Info("main window initialization completed");
             }
         }
         catch (Exception ex)
         {
-            MessageBox.Show(
-                $"Failed to start TideReader.{Environment.NewLine}{Environment.NewLine}{ex.Message}",
-                "Startup Error",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+            StartupDiagnostics.Info($"startup failed: {ex}");
+            if (!_launchConfig.ServiceMode)
+            {
+                MessageBox.Show(
+                    $"Failed to start TideReader.{Environment.NewLine}{Environment.NewLine}{ex.Message}",
+                    "Startup Error",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
 
             await ExitApplicationAsync();
         }
@@ -103,7 +135,8 @@ public partial class App : Application
             LocalApiToken = LocalApiToken,
             AllowedOrigins = allowedOrigins,
             WebRootPath = ResolveFrontendDistPath(),
-            RuntimeMode = launchConfig.ServiceMode ? SipRuntimeModes.Service : SipRuntimeModes.Standalone
+            RuntimeMode = launchConfig.ServiceMode ? SipRuntimeModes.Service : SipRuntimeModes.Standalone,
+            StartupLog = StartupDiagnostics.Info
         };
     }
 
@@ -111,6 +144,59 @@ public partial class App : Application
     {
         var store = new SettingsStore();
         return await store.LoadAsync(cancellationToken);
+    }
+
+    private static async Task<WebApplication> BuildBackendWithTimeoutAsync(LaunchConfig launchConfig, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var buildTask = Task.Run(() => BackendHost.Build([], CreateBackendOptions(launchConfig)), cancellationToken);
+            return await buildTask.WaitAsync(BackendBuildTimeout, cancellationToken);
+        }
+        catch (TimeoutException ex)
+        {
+            throw new TimeoutException($"Backend host build did not complete within {BackendBuildTimeout.TotalSeconds:0} seconds.", ex);
+        }
+    }
+
+    private static async Task StartBackendWithTimeoutAsync(WebApplication backendApp, CancellationToken cancellationToken)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(BackendStartTimeout);
+
+        try
+        {
+            var startTask = Task.Run(async () => await backendApp.StartAsync(timeout.Token), timeout.Token);
+            await startTask.WaitAsync(BackendStartTimeout, cancellationToken);
+        }
+        catch (TimeoutException ex)
+        {
+            throw new TimeoutException($"Backend startup did not complete within {BackendStartTimeout.TotalSeconds:0} seconds.", ex);
+        }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException($"Backend startup did not complete within {BackendStartTimeout.TotalSeconds:0} seconds.", ex);
+        }
+    }
+
+    private static async Task EnsureServiceReadyAsync(CancellationToken cancellationToken)
+    {
+        using var httpClient = new HttpClient
+        {
+            Timeout = TimeSpan.FromSeconds(2)
+        };
+        var verifier = new ServiceStartupVerifier(httpClient, StartupDiagnostics.Info);
+        var readiness = await verifier.WaitForReadyAsync(
+            new Uri($"{ApiUrl}/api/health"),
+            ServiceReadinessTimeout,
+            ServiceReadinessPollInterval,
+            cancellationToken);
+
+        if (!readiness.Ready)
+        {
+            throw new TimeoutException(
+                $"Service mode did not become ready within {ServiceReadinessTimeout.TotalSeconds:0} seconds. BackendReady={readiness.BackendReady}, SipPort={(readiness.SipPort?.ToString() ?? "none")}.");
+        }
     }
 
     private static BrowserTarget CreateBrowserTarget()
@@ -415,5 +501,37 @@ public sealed record LaunchConfig(bool ServiceMode, bool ShouldActivateExisting)
         return new LaunchConfig(
             ServiceMode: service && !show,
             ShouldActivateExisting: show || !service);
+    }
+}
+
+internal static class StartupDiagnostics
+{
+    private static readonly Lock Sync = new();
+    private static readonly string LogPath = ResolveLogPath();
+
+    public static void Info(string message)
+    {
+        lock (Sync)
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(LogPath)!);
+                File.AppendAllText(LogPath, $"{DateTimeOffset.Now:yyyy/MM/dd HH:mm:ss.fffffff zzz} {message}{Environment.NewLine}");
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private static string ResolveLogPath()
+    {
+        var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        if (!string.IsNullOrWhiteSpace(appData))
+        {
+            return Path.Combine(appData, "TideReader", "logs", "startup.log");
+        }
+
+        return Path.Combine(Path.GetTempPath(), "TideReader", "logs", "startup.log");
     }
 }

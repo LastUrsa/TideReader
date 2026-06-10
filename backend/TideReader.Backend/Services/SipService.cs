@@ -40,13 +40,26 @@ public sealed class SipService(BridgeService bridgeService, IAppUpdateChecker ap
         var health = Health();
         var state = bridgeService.GetState();
         var activeProfile = bridgeService.GetActiveOverlayProfile();
+        var overlaySettings = activeProfile.OverlaySettings ?? new OverlaySettings();
+        var containerStyle = overlaySettings.OverlayContainerStyle ?? new OverlayContainerStyle();
         return new SipStatusResponse
         {
             State = health.Status == "ready" ? StatusState(state.NowPlaying) : "warning",
             Message = string.IsNullOrWhiteSpace(state.StatusMessage) ? health.Message : state.StatusMessage,
             Healthy = health.Status is "ready" or "degraded",
             ActiveProfile = activeProfile.Name,
-            ActiveProfileId = activeProfile.Id
+            ActiveProfileId = activeProfile.Id,
+            OverlayUrl = state.OverlayUrl,
+            OverlayEnabled = state.Settings.OverlayEnabled,
+            OverlayPort = state.Settings.OverlayPort,
+            Layout = overlaySettings.ImagePosition,
+            AlbumArtVisible = overlaySettings.ImageSizePx > 0,
+            ImageSizePx = overlaySettings.ImageSizePx,
+            StatusPillVisible = overlaySettings.ShowPlaybackState,
+            BackgroundMode = containerStyle.BackgroundMode,
+            TextAlign = overlaySettings.TextAlign,
+            ProfileCount = bridgeService.GetOverlayProfiles().Count,
+            NowPlaying = ToNowPlayingSummary(state.NowPlaying)
         };
     }
 
@@ -102,4 +115,21 @@ public sealed class SipService(BridgeService bridgeService, IAppUpdateChecker ap
             "not_running" => "idle",
             _ => "idle"
         };
+
+    private static SipNowPlayingSummary ToNowPlayingSummary(DetectionResult result) => new()
+    {
+        Status = result.Status,
+        Title = result.Title,
+        Artist = result.Artist,
+        Album = result.Album,
+        DurationMs = result.DurationMs,
+        HasArtwork = result.ArtworkBytes.Length > 0 || !string.IsNullOrWhiteSpace(result.ArtworkPath),
+        ArtworkPath = result.ArtworkPath,
+        Source = result.Source,
+        Provider = result.Provider,
+        Browser = result.Browser,
+        Site = result.Site,
+        Confidence = result.Confidence,
+        MetadataSource = result.MetadataSource
+    };
 }

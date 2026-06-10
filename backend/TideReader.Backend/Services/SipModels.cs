@@ -12,7 +12,7 @@ public static class SipRuntimeModes
 [ExcludeFromCodeCoverage]
 public static class SipProtocol
 {
-    public const string Version = "1.1";
+    public const string Version = "1.2";
 }
 
 [ExcludeFromCodeCoverage]
@@ -53,6 +53,35 @@ public sealed class SipStatusResponse
     public bool Healthy { get; set; }
     public string ActiveProfile { get; set; } = "";
     public string ActiveProfileId { get; set; } = "";
+    public string OverlayUrl { get; set; } = "";
+    public bool OverlayEnabled { get; set; }
+    public int OverlayPort { get; set; }
+    public string Layout { get; set; } = "";
+    public bool AlbumArtVisible { get; set; }
+    public int ImageSizePx { get; set; }
+    public bool StatusPillVisible { get; set; }
+    public string BackgroundMode { get; set; } = "";
+    public string TextAlign { get; set; } = "";
+    public int ProfileCount { get; set; }
+    public SipNowPlayingSummary NowPlaying { get; set; } = new();
+}
+
+[ExcludeFromCodeCoverage]
+public sealed class SipNowPlayingSummary
+{
+    public string Status { get; set; } = "";
+    public string Title { get; set; } = "";
+    public string Artist { get; set; } = "";
+    public string Album { get; set; } = "";
+    public long DurationMs { get; set; }
+    public bool HasArtwork { get; set; }
+    public string ArtworkPath { get; set; } = "";
+    public string Source { get; set; } = "";
+    public string Provider { get; set; } = "";
+    public string Browser { get; set; } = "";
+    public string Site { get; set; } = "";
+    public double Confidence { get; set; }
+    public string MetadataSource { get; set; } = "";
 }
 
 [ExcludeFromCodeCoverage]

@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "7d7c7364-3a78-4ac4-9e42-6bda6f30c95a",
     "name": "TideReader SIP v1",
-    "description": "Local TideReader SIP v1.1 collection for LivePanel-compatible discovery, status, and overlay profile activation. Start TideReader first, then set baseUrl to the active SIP port, usually http://127.0.0.1:47030.",
+    "description": "Local TideReader SIP v1.2 collection for LivePanel-compatible discovery, status, drawer metadata, and overlay profile activation. Start TideReader first, then set baseUrl to the active SIP port, usually http://127.0.0.1:47030.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -85,7 +85,7 @@
                 "status"
               ]
             },
-            "description": "Returns lightweight runtime status and the active overlay profile."
+            "description": "Returns lightweight runtime status, the active overlay profile, overlay display fields, overlay URL, and compact now-playing preview data."
           },
           "response": []
         }

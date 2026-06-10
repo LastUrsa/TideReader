@@ -1,6 +1,6 @@
 # TideReader SIP API Reference
 
-TideReader exposes SIP v1.1 for local Starsong module integration. This API is intended for same-machine tools such as LivePanel, not public network use.
+TideReader exposes SIP v1.2 for local Starsong module integration. This API is intended for same-machine tools such as LivePanel, not public network use.
 
 ## Runtime
 
@@ -30,7 +30,7 @@ TideReader.exe --show
 
 - JSON request and response bodies
 - Localhost only
-- No authentication in SIP v1.1
+- No authentication in SIP v1.2
 - No generic command or action endpoints
 - `POST /api/v1/profile` requires `Content-Type: application/json`
 - Unknown request fields are rejected
@@ -41,7 +41,7 @@ SIP is separate from TideReader's desktop UI API on `127.0.0.1:17656`.
 
 ## Security Posture
 
-SIP is a local integration API. It is intentionally narrow and does not expose profile CRUD, individual overlay settings, playback controls, filesystem paths, credentials, or generic command execution.
+SIP is a local integration API. It is intentionally narrow and does not expose profile CRUD, full overlay profile settings, playback controls, filesystem output folders, log paths, credentials, or generic command execution.
 
 Current safeguards:
 
@@ -53,7 +53,7 @@ Current safeguards:
 - The SIP listener enforces a small request-body limit.
 - Responses include `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'`, `Referrer-Policy: no-referrer`, and `X-Frame-Options: DENY`.
 
-SIP v1.1 does not define authentication. If future endpoints expose higher-impact actions or data, add a fresh security review before implementation.
+SIP v1.2 does not define authentication. If future endpoints expose higher-impact actions or data, add a fresh security review before implementation.
 
 ## Endpoints
 
@@ -69,7 +69,7 @@ Response:
   "name": "TideReader",
   "version": "0.4.0",
   "mode": "standalone",
-  "protocolVersion": "1.1"
+  "protocolVersion": "1.2"
 }
 ```
 
@@ -107,19 +107,46 @@ Consumers should ignore unknown future capability flags.
 
 ### GET `/api/v1/status`
 
-Returns lightweight runtime status. This endpoint does not expose full application settings.
+Returns lightweight runtime status, active profile display details, and a compact now-playing preview. This endpoint does not expose full application settings, filesystem output folders, logs, tokens, browser debug sessions, or raw detection debug data.
 
 Response:
 
 ```json
 {
-  "state": "idle",
-  "message": "Waiting for TIDAL",
+  "state": "active",
+  "message": "Playing Starsong - Signal Bloom",
   "healthy": true,
-  "activeProfile": "Default",
-  "activeProfileId": "default"
+  "activeProfile": "Starsong Main",
+  "activeProfileId": "2033febc-1def-446f-971e-f01cd083aa33",
+  "overlayUrl": "http://127.0.0.1:17655/overlay",
+  "overlayEnabled": true,
+  "overlayPort": 17655,
+  "layout": "Left",
+  "albumArtVisible": true,
+  "imageSizePx": 68,
+  "statusPillVisible": true,
+  "backgroundMode": "solid",
+  "textAlign": "Left",
+  "profileCount": 2,
+  "nowPlaying": {
+    "status": "playing",
+    "title": "Signal Bloom",
+    "artist": "Starsong",
+    "album": "Local Skies",
+    "durationMs": 214000,
+    "hasArtwork": true,
+    "artworkPath": "cover.jpg",
+    "source": "TIDAL",
+    "provider": "tidal",
+    "browser": "",
+    "site": "",
+    "confidence": 0.98,
+    "metadataSource": "MusicBrainz"
+  }
 }
 ```
+
+`layout`, `albumArtVisible`, `imageSizePx`, `statusPillVisible`, `backgroundMode`, and `textAlign` are derived from the active overlay profile. `albumArtVisible` is true when the active profile uses a positive image size. `nowPlaying.hasArtwork` is true when TideReader has artwork bytes or a non-empty artwork path.
 
 Known states include:
 

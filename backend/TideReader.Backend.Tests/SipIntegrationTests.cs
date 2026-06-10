@@ -23,13 +23,31 @@ public sealed class SipIntegrationTests
         Assert.Equal("TideReader", appPayload.GetProperty("name").GetString());
         Assert.Equal("0.4.0", appPayload.GetProperty("version").GetString());
         Assert.Equal("service", appPayload.GetProperty("mode").GetString());
-        Assert.Equal("1.1", appPayload.GetProperty("protocolVersion").GetString());
+        Assert.Equal("1.2", appPayload.GetProperty("protocolVersion").GetString());
         Assert.Equal("ready", healthPayload.GetProperty("status").GetString());
         Assert.Equal("TideReader operational", healthPayload.GetProperty("message").GetString());
         Assert.True(capabilitiesPayload.GetProperty("supportsProfiles").GetBoolean());
         Assert.True(capabilitiesPayload.GetProperty("supportsStatusReporting").GetBoolean());
         Assert.Equal("Default", statusPayload.GetProperty("activeProfile").GetString());
         Assert.Equal("default", statusPayload.GetProperty("activeProfileId").GetString());
+        Assert.Equal("http://127.0.0.1:17655/overlay", statusPayload.GetProperty("overlayUrl").GetString());
+        Assert.True(statusPayload.GetProperty("overlayEnabled").GetBoolean());
+        Assert.Equal(17655, statusPayload.GetProperty("overlayPort").GetInt32());
+        Assert.Equal("Right", statusPayload.GetProperty("layout").GetString());
+        Assert.True(statusPayload.GetProperty("albumArtVisible").GetBoolean());
+        Assert.Equal(96, statusPayload.GetProperty("imageSizePx").GetInt32());
+        Assert.False(statusPayload.GetProperty("statusPillVisible").GetBoolean());
+        Assert.Equal("gradient", statusPayload.GetProperty("backgroundMode").GetString());
+        Assert.Equal("Center", statusPayload.GetProperty("textAlign").GetString());
+        Assert.Equal(2, statusPayload.GetProperty("profileCount").GetInt32());
+
+        var nowPlaying = statusPayload.GetProperty("nowPlaying");
+        Assert.Equal("Signal Bloom", nowPlaying.GetProperty("title").GetString());
+        Assert.Equal("Starsong", nowPlaying.GetProperty("artist").GetString());
+        Assert.Equal("Local Skies", nowPlaying.GetProperty("album").GetString());
+        Assert.Equal("not_running", nowPlaying.GetProperty("status").GetString());
+        Assert.True(nowPlaying.GetProperty("hasArtwork").GetBoolean());
+        Assert.Equal("tidal", nowPlaying.GetProperty("provider").GetString());
     }
 
     [Fact]
@@ -323,12 +341,18 @@ public sealed class SipIntegrationTests
         private static Settings CreateSettings()
         {
             var defaultSettings = new OverlaySettings();
+            defaultSettings.ImageSizePx = 96;
+            defaultSettings.ImagePosition = "Right";
+            defaultSettings.TextAlign = "Center";
+            defaultSettings.ShowPlaybackState = false;
+            defaultSettings.OverlayContainerStyle.BackgroundMode = "gradient";
             var listeningSettings = new OverlaySettings();
             listeningSettings.SongTextStyle.FontSizePx = 42;
             return new Settings
             {
                 OutputFolder = @"C:\Temp\TideReaderTests",
-                OverlayEnabled = false,
+                OverlayEnabled = true,
+                OverlayPort = 17655,
                 EnableWindowTitleFallback = false,
                 EnableDebugManualInput = false,
                 MetadataProviderMode = nameof(MetadataProviderMode.Off),
@@ -360,10 +384,17 @@ public sealed class SipIntegrationTests
             return Task.FromResult(new PlaybackDetectionOutcome(new DetectionResult
             {
                 Status = playbackStatus,
+                Title = "Signal Bloom",
+                Artist = "Starsong",
+                Album = "Local Skies",
+                DurationMs = 214000,
+                ArtworkPath = "cover.jpg",
                 Source = "TIDAL",
                 Method = "media_session",
                 Confidence = 0.9,
-                Provider = "tidal"
+                Provider = "tidal",
+                MetadataSource = "MusicBrainz",
+                ArtworkBytes = [1, 2, 3]
             }, new BrowserDebugState()));
         }
     }
@@ -388,7 +419,7 @@ public sealed class SipIntegrationTests
 
     private sealed class SipFakeOverlayCoordinator : IOverlayCoordinator
     {
-        public string Url => "";
+        public string Url => "http://127.0.0.1:17655/overlay";
         public Task ConfigureAsync(bool enabled, int port, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 

@@ -68,6 +68,16 @@ powershell -ExecutionPolicy Bypass -File .\scripts\publish-desktop.ps1 -Version 
 
 The publish output includes `TideReader.Desktop.exe`, `TideReader.Backend.exe`, and bundled frontend assets under `frontend-dist/`.
 
+Create release artifacts:
+
+```bash
+powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 0.5.0
+```
+
+When packaging from WSL, copy or check out the repo to a Windows-local path first, such as `C:\Temp\TideReaderBuild`, then run the packaging script there. Windows PowerShell and `npm` do not reliably build from a `\\wsl.localhost\...` UNC working directory.
+
+The installer follows the Starsong Installer Standard: fresh Windows installs default to `%ProgramFiles%\Starsong Tools\TideReader`, while existing installations upgrade in place when Inno Setup detects the prior app location.
+
 ## Runtime Outputs
 
 The configured output folder receives `nowplaying.json`, `title.txt`, `artist.txt`, `album.txt`, `track.txt`, `status.txt`, and `cover.jpg` when artwork is available.

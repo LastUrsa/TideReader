@@ -1,5 +1,5 @@
 #define MyAppName "TideReader"
-#define MyAppPublisher "LastUrsa"
+#define MyAppPublisher "Starsong Tools"
 #define MyAppExeName "TideReader.Desktop.exe"
 
 #ifndef MyAppVersion
@@ -23,7 +23,7 @@ AppId={{0C30EF56-9790-4F64-A58A-24F8AA4D3975}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={autopf}\{#MyAppName}
+DefaultDirName={autopf}\{#MyAppPublisher}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\{#MyAppExeName}

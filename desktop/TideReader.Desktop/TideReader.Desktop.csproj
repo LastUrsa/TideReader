@@ -25,6 +25,9 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ApplicationIcon>Assets\TideReaderIcon.ico</ApplicationIcon>
     <Version>0.5.0</Version>
+    <Company>Starsong Tools</Company>
+    <Authors>Starsong Tools</Authors>
+    <Product>TideReader</Product>
   </PropertyGroup>
 
   <ItemGroup>

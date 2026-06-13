@@ -4,7 +4,12 @@ param(
     [string]$Runtime = "win-x64",
     [string]$Configuration = "Release",
     [switch]$SelfContained,
-    [string]$InnoSetupCompilerPath = ""
+    [string]$InnoSetupCompilerPath = "",
+    [string]$SignToolPath = "",
+    [string]$SigningCertificateThumbprint = "",
+    [string]$SigningCertificatePfxPath = "",
+    [string]$SigningCertificatePfxPassword = "",
+    [string]$TimestampUrl = "http://timestamp.digicert.com"
 )
 
 $ErrorActionPreference = "Stop"
@@ -40,11 +45,82 @@ function Resolve-InnoSetupCompiler([string]$explicitPath) {
     throw "Inno Setup 6 was not found. Install Inno Setup 6 or pass -InnoSetupCompilerPath."
 }
 
+function Resolve-SignTool([string]$explicitPath) {
+    if (-not [string]::IsNullOrWhiteSpace($explicitPath)) {
+        if (-not (Test-Path -LiteralPath $explicitPath)) {
+            throw "SignTool was not found at '$explicitPath'."
+        }
+
+        return (Resolve-Path -LiteralPath $explicitPath).Path
+    }
+
+    $kitRoot = "${env:ProgramFiles(x86)}\Windows Kits\10\bin"
+    if (Test-Path -LiteralPath $kitRoot) {
+        $candidate = Get-ChildItem -LiteralPath $kitRoot -Recurse -Filter signtool.exe -ErrorAction SilentlyContinue |
+            Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+        if ($candidate) {
+            return $candidate.FullName
+        }
+    }
+
+    $command = Get-Command signtool.exe -ErrorAction SilentlyContinue
+    if ($command) {
+        return $command.Source
+    }
+
+    throw "SignTool was not found. Install the Windows SDK or pass -SignToolPath."
+}
+
+function Test-CodeSigningEnabled {
+    return -not [string]::IsNullOrWhiteSpace($SigningCertificateThumbprint) -or
+        -not [string]::IsNullOrWhiteSpace($SigningCertificatePfxPath)
+}
+
+function Invoke-CodeSign([string[]]$Paths) {
+    if (-not (Test-CodeSigningEnabled)) {
+        return
+    }
+
+    $signtool = Resolve-SignTool $SignToolPath
+    foreach ($path in $Paths) {
+        if (-not (Test-Path -LiteralPath $path)) {
+            throw "Expected signing target was not found at '$path'."
+        }
+
+        $args = @("sign", "/fd", "SHA256", "/tr", $TimestampUrl, "/td", "SHA256")
+        if (-not [string]::IsNullOrWhiteSpace($SigningCertificatePfxPath)) {
+            $args += @("/f", $SigningCertificatePfxPath)
+            if (-not [string]::IsNullOrWhiteSpace($SigningCertificatePfxPassword)) {
+                $args += @("/p", $SigningCertificatePfxPassword)
+            }
+        }
+        else {
+            $args += @("/sha1", $SigningCertificateThumbprint)
+        }
+        $args += $path
+
+        Write-Host "Signing $path ..."
+        & $signtool @args
+        if ($LASTEXITCODE -ne 0) {
+            throw "Code signing failed for '$path' with exit code $LASTEXITCODE."
+        }
+    }
+}
+
 Write-Host "Publishing desktop app..."
 & $publishScript -Runtime $Runtime -Configuration $Configuration -SelfContained:$SelfContained.IsPresent -Version $Version
 
 if (-not (Test-Path -LiteralPath $publishDir)) {
     throw "Expected publish output was not found at '$publishDir'."
+}
+
+if (Test-CodeSigningEnabled) {
+    $publishSigningTargets = Get-ChildItem -LiteralPath $publishDir -Recurse -File |
+        Where-Object { $_.Extension -eq ".exe" } |
+        Select-Object -ExpandProperty FullName
+    Invoke-CodeSign $publishSigningTargets
 }
 
 New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
@@ -69,6 +145,8 @@ $installerPath = Join-Path $releaseDir ($installerBaseName + ".exe")
 if (-not (Test-Path -LiteralPath $installerPath)) {
     throw "Expected installer output was not found at '$installerPath'."
 }
+
+Invoke-CodeSign @($installerPath)
 
 Write-Host ""
 Write-Host "Release packaging complete:"

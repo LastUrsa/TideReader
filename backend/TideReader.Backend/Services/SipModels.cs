@@ -12,7 +12,9 @@ public static class SipRuntimeModes
 [ExcludeFromCodeCoverage]
 public static class SipProtocol
 {
-    public const string Version = "1.2";
+    public const int Version = 1;
+    public const string ProfilesCapability = "profiles";
+    public const string BrowserSupportCapability = "browser-support";
 }
 
 [ExcludeFromCodeCoverage]
@@ -25,10 +27,16 @@ public sealed class SipHostOptions
 public sealed class SipAppResponse
 {
     public string AppId { get; set; } = "tidereader";
+    public string AppName { get; set; } = "TideReader";
     public string Name { get; set; } = "TideReader";
     public string Version { get; set; } = "";
     public string Mode { get; set; } = SipRuntimeModes.Standalone;
-    public string ProtocolVersion { get; set; } = SipProtocol.Version;
+    public int ProtocolVersion { get; set; } = SipProtocol.Version;
+    public List<string> Capabilities { get; set; } =
+    [
+        SipProtocol.ProfilesCapability,
+        SipProtocol.BrowserSupportCapability
+    ];
 }
 
 [ExcludeFromCodeCoverage]
@@ -41,6 +49,12 @@ public sealed class SipHealthResponse
 [ExcludeFromCodeCoverage]
 public sealed class SipCapabilitiesResponse
 {
+    public int ProtocolVersion { get; set; } = SipProtocol.Version;
+    public List<string> Capabilities { get; set; } =
+    [
+        SipProtocol.ProfilesCapability,
+        SipProtocol.BrowserSupportCapability
+    ];
     public bool SupportsProfiles { get; set; }
     public bool SupportsStatusReporting { get; set; }
 }
@@ -53,6 +67,9 @@ public sealed class SipStatusResponse
     public bool Healthy { get; set; }
     public string ActiveProfile { get; set; } = "";
     public string ActiveProfileId { get; set; } = "";
+    public string ActiveProfileName { get; set; } = "";
+    public bool BrowserSupportEnabled { get; set; }
+    public string Source { get; set; } = "none";
     public string OverlayUrl { get; set; } = "";
     public bool OverlayEnabled { get; set; }
     public int OverlayPort { get; set; }
@@ -109,6 +126,24 @@ public sealed class SipProfileActivationResponse
     public bool Success { get; set; }
     public string Profile { get; set; } = "";
     public string ProfileId { get; set; } = "";
+}
+
+[ExcludeFromCodeCoverage]
+public sealed class SipBrowserSupportResponse
+{
+    public bool Enabled { get; set; }
+}
+
+[ExcludeFromCodeCoverage]
+public sealed class SipBrowserSupportRequest
+{
+    public bool? Enabled { get; set; }
+}
+
+[ExcludeFromCodeCoverage]
+public sealed class SipBrowserSupportUpdateResponse
+{
+    public bool Success { get; set; }
 }
 
 [ExcludeFromCodeCoverage]

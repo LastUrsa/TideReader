@@ -35,9 +35,56 @@ public static class SipHttpApi
         app.MapGet("/api/v1/health", (SipService sip) => Results.Json(sip.Health(), JsonOptions));
         app.MapGet("/api/v1/capabilities", (SipService sip) => Results.Json(sip.Capabilities(), JsonOptions));
         app.MapGet("/api/v1/status", (SipService sip) => Results.Json(sip.Status(), JsonOptions));
+        app.MapGet("/api/v1/browser-support", (SipService sip) => Results.Json(sip.BrowserSupport(), JsonOptions));
+        app.MapPost("/api/v1/browser-support", SetBrowserSupportAsync);
         app.MapGet("/api/v1/profiles", (SipService sip) => Results.Json(sip.Profiles(), JsonOptions));
         app.MapGet("/api/v1/profile/current", (SipService sip) => Results.Json(sip.CurrentProfile(), JsonOptions));
         app.MapPost("/api/v1/profile", ActivateProfileAsync);
+    }
+
+    internal static async Task<IResult> SetBrowserSupportAsync(HttpContext context, SipService sip, CancellationToken cancellationToken)
+    {
+        if (IsOversizedRequest(context.Request))
+        {
+            return Results.Json(
+                new SipErrorResponse { Success = false, Error = "InvalidRequest" },
+                JsonOptions,
+                statusCode: StatusCodes.Status413PayloadTooLarge);
+        }
+
+        if (!IsJsonRequest(context.Request))
+        {
+            return Results.Json(
+                new SipErrorResponse { Success = false, Error = "InvalidRequest" },
+                JsonOptions,
+                statusCode: StatusCodes.Status415UnsupportedMediaType);
+        }
+
+        SipBrowserSupportRequest? request;
+        try
+        {
+            request = await context.Request.ReadFromJsonAsync<SipBrowserSupportRequest>(JsonOptions, cancellationToken);
+        }
+        catch (JsonException)
+        {
+            return Results.Json(
+                new SipErrorResponse { Success = false, Error = "InvalidRequest" },
+                JsonOptions,
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        try
+        {
+            var response = await sip.SetBrowserSupportAsync(request?.Enabled, cancellationToken);
+            return Results.Json(response, JsonOptions);
+        }
+        catch (SipException ex)
+        {
+            return Results.Json(
+                new SipErrorResponse { Success = false, Error = ex.Message },
+                JsonOptions,
+                statusCode: ex.StatusCode);
+        }
     }
 
     internal static async Task<IResult> ActivateProfileAsync(HttpContext context, SipService sip, CancellationToken cancellationToken)

@@ -20,16 +20,25 @@ public sealed class SipIntegrationTests
         var statusPayload = ToJson(context.Service.Status());
 
         Assert.Equal("tidereader", appPayload.GetProperty("appId").GetString());
+        Assert.Equal("TideReader", appPayload.GetProperty("appName").GetString());
         Assert.Equal("TideReader", appPayload.GetProperty("name").GetString());
         Assert.Equal("0.5.0", appPayload.GetProperty("version").GetString());
         Assert.Equal("service", appPayload.GetProperty("mode").GetString());
-        Assert.Equal("1.2", appPayload.GetProperty("protocolVersion").GetString());
+        Assert.Equal(1, appPayload.GetProperty("protocolVersion").GetInt32());
+        Assert.Contains("profiles", appPayload.GetProperty("capabilities").EnumerateArray().Select(capability => capability.GetString()));
+        Assert.Contains("browser-support", appPayload.GetProperty("capabilities").EnumerateArray().Select(capability => capability.GetString()));
         Assert.Equal("ready", healthPayload.GetProperty("status").GetString());
         Assert.Equal("TideReader operational", healthPayload.GetProperty("message").GetString());
+        Assert.Equal(1, capabilitiesPayload.GetProperty("protocolVersion").GetInt32());
+        Assert.Contains("profiles", capabilitiesPayload.GetProperty("capabilities").EnumerateArray().Select(capability => capability.GetString()));
+        Assert.Contains("browser-support", capabilitiesPayload.GetProperty("capabilities").EnumerateArray().Select(capability => capability.GetString()));
         Assert.True(capabilitiesPayload.GetProperty("supportsProfiles").GetBoolean());
         Assert.True(capabilitiesPayload.GetProperty("supportsStatusReporting").GetBoolean());
         Assert.Equal("Default", statusPayload.GetProperty("activeProfile").GetString());
         Assert.Equal("default", statusPayload.GetProperty("activeProfileId").GetString());
+        Assert.Equal("Default", statusPayload.GetProperty("activeProfileName").GetString());
+        Assert.True(statusPayload.GetProperty("browserSupportEnabled").GetBoolean());
+        Assert.Equal("none", statusPayload.GetProperty("source").GetString());
         Assert.Equal("http://127.0.0.1:17655/overlay", statusPayload.GetProperty("overlayUrl").GetString());
         Assert.True(statusPayload.GetProperty("overlayEnabled").GetBoolean());
         Assert.Equal(17655, statusPayload.GetProperty("overlayPort").GetInt32());
@@ -70,6 +79,37 @@ public sealed class SipIntegrationTests
     }
 
     [Fact]
+    public async Task BrowserSupport_CanBeReadUpdatedAndPersists()
+    {
+        using var context = await StartSipServiceAsync();
+
+        Assert.True(context.Service.BrowserSupport().Enabled);
+
+        var disabled = await context.Service.SetBrowserSupportAsync(false, CancellationToken.None);
+
+        Assert.True(disabled.Success);
+        Assert.False(context.Service.BrowserSupport().Enabled);
+        Assert.False(context.SettingsStore.SavedSettings.BrowserSettings.Enabled);
+
+        var enabled = await context.Service.SetBrowserSupportAsync(true, CancellationToken.None);
+
+        Assert.True(enabled.Success);
+        Assert.True(context.Service.BrowserSupport().Enabled);
+        Assert.True(context.SettingsStore.SavedSettings.BrowserSettings.Enabled);
+    }
+
+    [Fact]
+    public async Task BrowserSupport_RejectsMissingEnabled()
+    {
+        using var context = await StartSipServiceAsync();
+
+        var invalid = await Assert.ThrowsAsync<SipException>(() => context.Service.SetBrowserSupportAsync(null, CancellationToken.None));
+
+        Assert.Equal(StatusCodes.Status400BadRequest, invalid.StatusCode);
+        Assert.Equal("InvalidRequest", invalid.Message);
+    }
+
+    [Fact]
     public async Task ActivateProfile_RejectsInvalidAndMissingProfiles()
     {
         using var context = await StartSipServiceAsync();
@@ -105,6 +145,20 @@ public sealed class SipIntegrationTests
         Assert.Equal("Metadata provider unavailable", health.Message);
         Assert.Equal("warning", status.State);
         Assert.True(status.Healthy);
+    }
+
+    [Theory]
+    [InlineData("playing", "tidal", "desktop")]
+    [InlineData("paused", "tidal", "desktop")]
+    [InlineData("playing", "browser", "browser")]
+    [InlineData("not_running", "browser", "none")]
+    public async Task Status_ReportsPlaybackSource(string playbackStatus, string provider, string source)
+    {
+        using var context = await StartSipServiceAsync(playbackStatus: playbackStatus, provider: provider);
+
+        var status = context.Service.Status();
+
+        Assert.Equal(source, status.Source);
     }
 
     [Theory]
@@ -151,6 +205,15 @@ public sealed class SipIntegrationTests
         Assert.Throws<JsonException>(() =>
             JsonSerializer.Deserialize<SipActivateProfileRequest>(
                 """{"profile":"Default","extra":true}""",
+                SipHttpApi.JsonOptions));
+    }
+
+    [Fact]
+    public void SipBrowserSupport_RejectsUnknownRequestFields()
+    {
+        Assert.Throws<JsonException>(() =>
+            JsonSerializer.Deserialize<SipBrowserSupportRequest>(
+                """{"enabled":true,"extra":true}""",
                 SipHttpApi.JsonOptions));
     }
 
@@ -263,10 +326,79 @@ public sealed class SipIntegrationTests
         Assert.Equal("listening-party", context.Service.CurrentProfile().Id);
     }
 
+    [Fact]
+    public async Task SipBrowserSupportHttp_UpdatesBrowserSupport()
+    {
+        using var context = await StartSipServiceAsync();
+        var httpContext = CreateJsonRequest("""{"enabled":false}""");
+
+        var result = await SipHttpApi.SetBrowserSupportAsync(httpContext, context.Service, CancellationToken.None);
+        var response = await ExecuteResultAsync(result);
+
+        Assert.Equal(StatusCodes.Status200OK, response.StatusCode);
+        Assert.True(response.Body.GetProperty("success").GetBoolean());
+        Assert.False(context.Service.BrowserSupport().Enabled);
+    }
+
+    [Fact]
+    public async Task SipBrowserSupportHttp_RejectsUnsupportedMediaType()
+    {
+        using var context = await StartSipServiceAsync();
+        var httpContext = CreateJsonRequest("""{"enabled":false}""");
+        httpContext.Request.ContentType = "text/plain";
+
+        var result = await SipHttpApi.SetBrowserSupportAsync(httpContext, context.Service, CancellationToken.None);
+        var response = await ExecuteResultAsync(result);
+
+        Assert.Equal(StatusCodes.Status415UnsupportedMediaType, response.StatusCode);
+        Assert.Equal("InvalidRequest", response.Body.GetProperty("error").GetString());
+    }
+
+    [Fact]
+    public async Task SipBrowserSupportHttp_RejectsOversizedPayload()
+    {
+        using var context = await StartSipServiceAsync();
+        var httpContext = CreateJsonRequest("""{"enabled":false}""");
+        httpContext.Request.ContentLength = SipHttpApi.MaxRequestBodyBytes + 1;
+
+        var result = await SipHttpApi.SetBrowserSupportAsync(httpContext, context.Service, CancellationToken.None);
+        var response = await ExecuteResultAsync(result);
+
+        Assert.Equal(StatusCodes.Status413PayloadTooLarge, response.StatusCode);
+        Assert.Equal("InvalidRequest", response.Body.GetProperty("error").GetString());
+    }
+
+    [Fact]
+    public async Task SipBrowserSupportHttp_RejectsMalformedJson()
+    {
+        using var context = await StartSipServiceAsync();
+        var httpContext = CreateJsonRequest("""{"enabled":""");
+
+        var result = await SipHttpApi.SetBrowserSupportAsync(httpContext, context.Service, CancellationToken.None);
+        var response = await ExecuteResultAsync(result);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, response.StatusCode);
+        Assert.Equal("InvalidRequest", response.Body.GetProperty("error").GetString());
+    }
+
+    [Fact]
+    public async Task SipBrowserSupportHttp_RejectsMissingEnabled()
+    {
+        using var context = await StartSipServiceAsync();
+        var httpContext = CreateJsonRequest("""{}""");
+
+        var result = await SipHttpApi.SetBrowserSupportAsync(httpContext, context.Service, CancellationToken.None);
+        var response = await ExecuteResultAsync(result);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, response.StatusCode);
+        Assert.Equal("InvalidRequest", response.Body.GetProperty("error").GetString());
+    }
+
     private static async Task<TestSipContext> StartSipServiceAsync(
         string runtimeMode = SipRuntimeModes.Standalone,
         string playbackStatus = "not_running",
-        string lastError = "")
+        string lastError = "",
+        string provider = "tidal")
     {
         var settingsStore = new SipFakeSettingsStore();
         var logger = new AppLogger(Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N"), "logs"));
@@ -274,7 +406,7 @@ public sealed class SipIntegrationTests
             settingsStore,
             logger,
             new SipFakeOutputWriter(),
-            new SipFakePlaybackDetector(playbackStatus, lastError),
+            new SipFakePlaybackDetector(playbackStatus, lastError, provider),
             new SipFakeWindowTitleDetector(),
             new SipFakeManualDetector(),
             new SipFakeMetadataEnricher(),
@@ -285,7 +417,7 @@ public sealed class SipIntegrationTests
         await bridge.InitializeAsync(CancellationToken.None);
         await bridge.RunDetectionAsync(CancellationToken.None);
         var service = new SipService(bridge, new SipFakeAppUpdateChecker(), new SipHostOptions { RuntimeMode = runtimeMode });
-        return new TestSipContext(service, bridge, logger);
+        return new TestSipContext(service, bridge, settingsStore, logger);
     }
 
     private static JsonElement ToJson<T>(T value) => JsonSerializer.SerializeToElement(value, new JsonSerializerOptions(JsonSerializerDefaults.Web));
@@ -315,10 +447,11 @@ public sealed class SipIntegrationTests
         return (context.Response.StatusCode, document.RootElement.Clone());
     }
 
-    private sealed class TestSipContext(SipService service, BridgeService bridge, AppLogger logger) : IDisposable
+    private sealed class TestSipContext(SipService service, BridgeService bridge, SipFakeSettingsStore settingsStore, AppLogger logger) : IDisposable
     {
         public SipService Service { get; } = service;
         public BridgeService Bridge { get; } = bridge;
+        public SipFakeSettingsStore SettingsStore { get; } = settingsStore;
 
         public void Dispose()
         {
@@ -329,6 +462,7 @@ public sealed class SipIntegrationTests
     private sealed class SipFakeSettingsStore : ISettingsStore
     {
         private Settings _settings = CreateSettings();
+        public Settings SavedSettings => _settings;
 
         public Task<Settings> LoadAsync(CancellationToken cancellationToken) => Task.FromResult(_settings);
 
@@ -372,7 +506,7 @@ public sealed class SipIntegrationTests
         public Task WriteAsync(string outputFolder, DetectionResult state, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
-    private sealed class SipFakePlaybackDetector(string playbackStatus, string errorMessage) : IPlaybackDetector
+    private sealed class SipFakePlaybackDetector(string playbackStatus, string errorMessage, string provider = "tidal") : IPlaybackDetector
     {
         public Task<PlaybackDetectionOutcome> DetectAsync(DetectionResult previous, Settings settings, CancellationToken cancellationToken)
         {
@@ -392,7 +526,9 @@ public sealed class SipIntegrationTests
                 Source = "TIDAL",
                 Method = "media_session",
                 Confidence = 0.9,
-                Provider = "tidal",
+                Provider = provider,
+                Browser = provider == "browser" ? "Chrome" : "",
+                Site = provider == "browser" ? "youtubeMusic" : "",
                 MetadataSource = "MusicBrainz",
                 ArtworkBytes = [1, 2, 3]
             }, new BrowserDebugState()));

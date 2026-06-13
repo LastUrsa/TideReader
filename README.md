@@ -7,7 +7,7 @@ Windows desktop app for publishing now-playing data and an OBS-friendly overlay 
 - Detects TIDAL desktop playback and browser media sessions from Chrome, Edge, and Firefox.
 - Publishes text, JSON, artwork, and browser-overlay outputs for OBS workflows.
 - Includes overlay styling, color picking, live preview, saved profiles, source selection, browser-session diagnostics, and update checks.
-- Exposes a localhost-only SIP v1.2 API for same-machine integrations such as LivePanel.
+- Exposes a localhost-only SIP v1 API for same-machine integrations such as LivePanel.
 
 ## Stack
 
@@ -49,6 +49,14 @@ dotnet build TideReader.slnx -c Release
 powershell -ExecutionPolicy Bypass -File .\scripts\test-backend-coverage.ps1
 ```
 
+Run SIP Newman smoke checks against a service-mode desktop build:
+
+```bash
+./scripts/test-sip-newman.sh
+```
+
+The release workflow runs the SIP Newman smoke before packaging release artifacts.
+
 For desktop UI work, run `npm run dev` in `frontend/`, set `TIDAL_DESKTOP_DEV_SERVER_URL=http://127.0.0.1:5173`, then run `dotnet run --project desktop/TideReader.Desktop`. Set `TIDEREADER_KEEP_WINDOW_VISIBLE=1` to keep close/minimize actions from sending the app to the tray.
 
 ## Quality Gates
@@ -57,6 +65,7 @@ For desktop UI work, run `npm run dev` in `frontend/`, set `TIDAL_DESKTOP_DEV_SE
 - Backend coverage: at least `85%` lines and `73%` branches.
 - Frontend dependency audit: `npm audit --audit-level=high`.
 - Release build: `dotnet build TideReader.slnx -c Release`.
+- SIP contract smoke: `./scripts/test-sip-newman.sh`.
 
 ## Publish
 
@@ -73,6 +82,8 @@ Create release artifacts:
 ```bash
 powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 0.5.0
 ```
+
+Signed releases require an Authenticode code-signing certificate. For GitHub Releases, configure `WINDOWS_CODESIGN_PFX_BASE64` with a base64-encoded PFX and `WINDOWS_CODESIGN_PFX_PASSWORD` with its password. Local release packaging can sign with either `-SigningCertificatePfxPath` or `-SigningCertificateThumbprint`.
 
 When packaging from WSL, copy or check out the repo to a Windows-local path first, such as `C:\Temp\TideReaderBuild`, then run the packaging script there. Windows PowerShell and `npm` do not reliably build from a `\\wsl.localhost\...` UNC working directory.
 

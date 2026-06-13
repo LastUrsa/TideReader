@@ -1,6 +1,6 @@
 # TideReader SIP API Reference
 
-TideReader exposes SIP v1.2 for local Starsong module integration. This API is intended for same-machine tools such as LivePanel, not public network use.
+TideReader exposes SIP v1 for local Starsong module integration. This API is intended for same-machine tools such as LivePanel, not public network use.
 
 ## Runtime
 
@@ -30,9 +30,9 @@ TideReader.exe --show
 
 - JSON request and response bodies
 - Localhost only
-- No authentication in SIP v1.2
+- No authentication in SIP v1
 - No generic command or action endpoints
-- `POST /api/v1/profile` requires `Content-Type: application/json`
+- `POST /api/v1/profile` and `POST /api/v1/browser-support` require `Content-Type: application/json`
 - Unknown request fields are rejected
 - SIP request bodies are limited to 4096 bytes
 - Responses include no-store and browser hardening headers
@@ -49,11 +49,11 @@ Current safeguards:
 - Requests with non-localhost `Host` headers are rejected.
 - CORS is not enabled for the SIP listener.
 - JSON `POST` requests reject unknown fields.
-- The only mutating SIP endpoint activates an existing overlay profile by name.
+- Mutating SIP endpoints activate an existing overlay profile by name or toggle browser support.
 - The SIP listener enforces a small request-body limit.
 - Responses include `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'`, `Referrer-Policy: no-referrer`, and `X-Frame-Options: DENY`.
 
-SIP v1.2 does not define authentication. If future endpoints expose higher-impact actions or data, add a fresh security review before implementation.
+SIP v1 does not define authentication. If future endpoints expose higher-impact actions or data, add a fresh security review before implementation.
 
 ## Endpoints
 
@@ -66,10 +66,15 @@ Response:
 ```json
 {
   "appId": "tidereader",
+  "appName": "TideReader",
   "name": "TideReader",
   "version": "0.5.0",
   "mode": "standalone",
-  "protocolVersion": "1.2"
+  "protocolVersion": 1,
+  "capabilities": [
+    "profiles",
+    "browser-support"
+  ]
 }
 ```
 
@@ -98,12 +103,17 @@ Response:
 
 ```json
 {
+  "protocolVersion": 1,
+  "capabilities": [
+    "profiles",
+    "browser-support"
+  ],
   "supportsProfiles": true,
   "supportsStatusReporting": true
 }
 ```
 
-Consumers should ignore unknown future capability flags.
+Consumers should use `capabilities` for feature discovery and ignore unknown future capability names. The `supports*` fields are retained for older clients.
 
 ### GET `/api/v1/status`
 
@@ -118,6 +128,9 @@ Response:
   "healthy": true,
   "activeProfile": "Starsong Main",
   "activeProfileId": "2033febc-1def-446f-971e-f01cd083aa33",
+  "activeProfileName": "Starsong Main",
+  "browserSupportEnabled": true,
+  "source": "desktop",
   "overlayUrl": "http://127.0.0.1:17655/overlay",
   "overlayEnabled": true,
   "overlayPort": 17655,
@@ -147,6 +160,12 @@ Response:
 ```
 
 `layout`, `albumArtVisible`, `imageSizePx`, `statusPillVisible`, `backgroundMode`, and `textAlign` are derived from the active overlay profile. `albumArtVisible` is true when the active profile uses a positive image size. `nowPlaying.hasArtwork` is true when TideReader has artwork bytes or a non-empty artwork path.
+
+`source` reports where active playback metadata is coming from:
+
+- `desktop`: the desktop TIDAL application
+- `browser`: a supported browser source
+- `none`: no active playback source is available
 
 Known states include:
 
@@ -218,6 +237,38 @@ Response:
 
 Profile names are matched case-insensitively. Activation uses TideReader's existing settings path, so the active profile, preview state, and overlay output update as if the profile were selected through the UI.
 
+### GET `/api/v1/browser-support`
+
+Returns whether TideReader should monitor supported browser playback sources in addition to desktop playback sources.
+
+Response:
+
+```json
+{
+  "enabled": true
+}
+```
+
+### POST `/api/v1/browser-support`
+
+Enables or disables browser support. The setting is persisted through TideReader's normal settings path.
+
+Request:
+
+```json
+{
+  "enabled": false
+}
+```
+
+Response:
+
+```json
+{
+  "success": true
+}
+```
+
 ## Errors
 
 Standard error response:
@@ -231,8 +282,22 @@ Standard error response:
 
 Common statuses:
 
-- `400 Bad Request`: invalid JSON, unknown request fields, or empty profile name
+- `400 Bad Request`: invalid JSON, unknown request fields, empty profile name, or missing browser support state
 - `403 Forbidden`: non-localhost host header
 - `404 Not Found`: requested profile does not exist
 - `413 Payload Too Large`: request body exceeds the SIP body limit
 - `415 Unsupported Media Type`: missing or non-JSON `Content-Type` for profile activation
+
+## Newman Smoke Test
+
+Run the automated SIP smoke collection against a service-mode desktop build:
+
+```bash
+./scripts/test-sip-newman.sh
+```
+
+To test an already running TideReader instance:
+
+```bash
+./scripts/test-sip-newman.sh --no-launch --base-url http://127.0.0.1:47030
+```

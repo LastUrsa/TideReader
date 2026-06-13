@@ -1,6 +1,6 @@
 #define MyAppName "TideReader"
 #define MyAppPublisher "Starsong Tools"
-#define MyAppExeName "TideReader.Desktop.exe"
+#define MyAppExeName "TideReader.exe"
 
 #ifndef MyAppVersion
   #define MyAppVersion "0.0.0-dev"

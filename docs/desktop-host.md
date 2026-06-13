@@ -42,7 +42,7 @@ The desktop project copies `frontend/dist` into the publish output as `frontend-
 
 ## Service Mode
 
-`TideReader.Desktop.exe --service` starts the same in-process backend and SIP listener without opening the main window. Service startup verifies that the backend health endpoint on `127.0.0.1:17656` and one SIP discovery port in `47030-47039` become reachable. If either endpoint does not become ready, the desktop process logs the startup failure and exits instead of remaining alive without usable local APIs.
+`TideReader.exe --service` starts the same in-process backend and SIP listener without opening the main window. Service startup verifies that the backend health endpoint on `127.0.0.1:17656` and one SIP discovery port in `47030-47039` become reachable. If either endpoint does not become ready, the desktop process logs the startup failure and exits instead of remaining alive without usable local APIs.
 
 Early startup diagnostics are written to `%APPDATA%\TideReader\logs\startup.log`, including launch argument parsing, single-instance ownership, settings load, backend host build/start, and service readiness checks. Runtime backend and SIP logs continue to use `%APPDATA%\TideReader\logs\bridge.log`.
 

@@ -23,6 +23,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>TideReader</AssemblyName>
     <ApplicationIcon>Assets\TideReaderIcon.ico</ApplicationIcon>
     <Version>0.5.0</Version>
     <Company>Starsong Tools</Company>

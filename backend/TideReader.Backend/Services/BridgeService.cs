@@ -136,6 +136,18 @@ public sealed class BridgeService
         return activeProfile;
     }
 
+    public async Task SetBrowserSupportEnabledAsync(bool enabled, CancellationToken cancellationToken)
+    {
+        Settings nextSettings;
+        lock (_lock)
+        {
+            nextSettings = CloneSettings(_settings);
+            nextSettings.BrowserSettings.Enabled = enabled;
+        }
+
+        await SaveSettingsAsync(nextSettings, cancellationToken);
+    }
+
     public async Task<AppState> SaveSettingsAsync(Settings settings, CancellationToken cancellationToken)
     {
         NormalizeSettings(settings, fallbackInvalidOutputFolder: false);

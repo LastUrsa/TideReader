@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "7d7c7364-3a78-4ac4-9e42-6bda6f30c95a",
     "name": "TideReader SIP v1",
-    "description": "Local TideReader SIP v1.2 collection for LivePanel-compatible discovery, status, drawer metadata, and overlay profile activation. Start TideReader first, then set baseUrl to the active SIP port, usually http://127.0.0.1:47030.",
+    "description": "Local TideReader SIP v1 collection for LivePanel-compatible discovery, status, browser support, drawer metadata, and overlay profile activation. Start TideReader first, then set baseUrl to the active SIP port, usually http://127.0.0.1:47030.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -25,7 +25,7 @@
                 "app"
               ]
             },
-            "description": "Returns TideReader identity, app version, runtime mode, and SIP protocol version."
+            "description": "Returns TideReader identity, app version, runtime mode, SIP protocol version, and capability names."
           },
           "response": []
         },
@@ -65,7 +65,7 @@
                 "capabilities"
               ]
             },
-            "description": "Returns supported SIP feature flags."
+            "description": "Returns supported SIP capability names and legacy feature flags."
           },
           "response": []
         },
@@ -85,7 +85,100 @@
                 "status"
               ]
             },
-            "description": "Returns lightweight runtime status, the active overlay profile, overlay display fields, overlay URL, and compact now-playing preview data."
+            "description": "Returns lightweight runtime status, the active overlay profile, browser support state, playback source, overlay display fields, overlay URL, and compact now-playing preview data."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Browser Support",
+      "item": [
+        {
+          "name": "Get Browser Support",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/browser-support",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "browser-support"
+              ]
+            },
+            "description": "Returns whether TideReader browser support is enabled."
+          },
+          "response": []
+        },
+        {
+          "name": "Enable Browser Support",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/browser-support",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "browser-support"
+              ]
+            },
+            "description": "Enables browser support through SIP."
+          },
+          "response": []
+        },
+        {
+          "name": "Disable Browser Support",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"enabled\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/browser-support",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "browser-support"
+              ]
+            },
+            "description": "Disables browser support through SIP."
           },
           "response": []
         }

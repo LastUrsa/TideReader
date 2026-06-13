@@ -69,6 +69,10 @@ jobs:
       - name: Release build
         run: dotnet build TideReader.slnx -c Release --no-restore
 
+      - name: SIP Newman smoke
+        shell: bash
+        run: ./scripts/test-sip-newman.sh --skip-build
+
       - name: Resolve release metadata
         id: release_meta
         shell: pwsh
@@ -119,22 +123,45 @@ jobs:
             Write-Error "Release notes file is empty: $notesSource"
           }
 
+      - name: Prepare code signing certificate
+        id: code_signing
+        shell: pwsh
+        env:
+          WINDOWS_CODESIGN_PFX_BASE64: ${{ secrets.WINDOWS_CODESIGN_PFX_BASE64 }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CODESIGN_PFX_BASE64)) {
+            "enabled=false" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+
+          $pfxPath = Join-Path $env:RUNNER_TEMP "tidereader-codesign.pfx"
+          [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:WINDOWS_CODESIGN_PFX_BASE64))
+          "enabled=true" >> $env:GITHUB_OUTPUT
+          "pfx_path=$pfxPath" >> $env:GITHUB_OUTPUT
+
       - name: Package zip and installer
         shell: pwsh
+        env:
+          WINDOWS_CODESIGN_PFX_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PFX_PASSWORD }}
         run: |
+          $packageArgs = @(
+            "-Version", "${{ steps.release_meta.outputs.version }}",
+            "-Runtime", "${{ steps.release_meta.outputs.runtime }}",
+            "-Configuration", "Release"
+          )
+
           if ("${{ steps.release_meta.outputs.self_contained }}" -eq "true") {
-            .\scripts\package-release.ps1 `
-              -Version "${{ steps.release_meta.outputs.version }}" `
-              -Runtime "${{ steps.release_meta.outputs.runtime }}" `
-              -Configuration Release `
-              -SelfContained
+            $packageArgs += "-SelfContained"
           }
-          else {
-            .\scripts\package-release.ps1 `
-              -Version "${{ steps.release_meta.outputs.version }}" `
-              -Runtime "${{ steps.release_meta.outputs.runtime }}" `
-              -Configuration Release
+
+          if ("${{ steps.code_signing.outputs.enabled }}" -eq "true") {
+            $packageArgs += @(
+              "-SigningCertificatePfxPath", "${{ steps.code_signing.outputs.pfx_path }}",
+              "-SigningCertificatePfxPassword", $env:WINDOWS_CODESIGN_PFX_PASSWORD
+            )
           }
+
+          .\scripts\package-release.ps1 @packageArgs
 
       - name: Upload release artifacts
         uses: actions/upload-artifact@v4

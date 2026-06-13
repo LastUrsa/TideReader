@@ -49,6 +49,9 @@ public sealed class SipService(BridgeService bridgeService, IAppUpdateChecker ap
             Healthy = health.Status is "ready" or "degraded",
             ActiveProfile = activeProfile.Name,
             ActiveProfileId = activeProfile.Id,
+            ActiveProfileName = activeProfile.Name,
+            BrowserSupportEnabled = state.Settings.BrowserSettings.Enabled,
+            Source = PlaybackSource(state.NowPlaying),
             OverlayUrl = state.OverlayUrl,
             OverlayEnabled = state.Settings.OverlayEnabled,
             OverlayPort = state.Settings.OverlayPort,
@@ -102,6 +105,29 @@ public sealed class SipService(BridgeService bridgeService, IAppUpdateChecker ap
         };
     }
 
+    public SipBrowserSupportResponse BrowserSupport()
+    {
+        var state = bridgeService.GetState();
+        return new SipBrowserSupportResponse
+        {
+            Enabled = state.Settings.BrowserSettings.Enabled
+        };
+    }
+
+    public async Task<SipBrowserSupportUpdateResponse> SetBrowserSupportAsync(bool? enabled, CancellationToken cancellationToken)
+    {
+        if (enabled is null)
+        {
+            throw new SipException("InvalidRequest", StatusCodes.Status400BadRequest);
+        }
+
+        await bridgeService.SetBrowserSupportEnabledAsync(enabled.Value, cancellationToken);
+        return new SipBrowserSupportUpdateResponse
+        {
+            Success = true
+        };
+    }
+
     private static string NormalizeRuntimeMode(string mode) =>
         string.Equals(mode, SipRuntimeModes.Service, StringComparison.OrdinalIgnoreCase)
             ? SipRuntimeModes.Service
@@ -115,6 +141,18 @@ public sealed class SipService(BridgeService bridgeService, IAppUpdateChecker ap
             "not_running" => "idle",
             _ => "idle"
         };
+
+    private static string PlaybackSource(DetectionResult result)
+    {
+        if (result.Status is not ("playing" or "paused"))
+        {
+            return "none";
+        }
+
+        return string.Equals(result.Provider, "browser", StringComparison.OrdinalIgnoreCase)
+            ? "browser"
+            : "desktop";
+    }
 
     private static SipNowPlayingSummary ToNowPlayingSummary(DetectionResult result) => new()
     {

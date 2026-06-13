@@ -341,6 +341,47 @@ public sealed class SipIntegrationTests
     }
 
     [Fact]
+    public async Task SipBrowserSupportHttp_RejectsUnsupportedMediaType()
+    {
+        using var context = await StartSipServiceAsync();
+        var httpContext = CreateJsonRequest("""{"enabled":false}""");
+        httpContext.Request.ContentType = "text/plain";
+
+        var result = await SipHttpApi.SetBrowserSupportAsync(httpContext, context.Service, CancellationToken.None);
+        var response = await ExecuteResultAsync(result);
+
+        Assert.Equal(StatusCodes.Status415UnsupportedMediaType, response.StatusCode);
+        Assert.Equal("InvalidRequest", response.Body.GetProperty("error").GetString());
+    }
+
+    [Fact]
+    public async Task SipBrowserSupportHttp_RejectsOversizedPayload()
+    {
+        using var context = await StartSipServiceAsync();
+        var httpContext = CreateJsonRequest("""{"enabled":false}""");
+        httpContext.Request.ContentLength = SipHttpApi.MaxRequestBodyBytes + 1;
+
+        var result = await SipHttpApi.SetBrowserSupportAsync(httpContext, context.Service, CancellationToken.None);
+        var response = await ExecuteResultAsync(result);
+
+        Assert.Equal(StatusCodes.Status413PayloadTooLarge, response.StatusCode);
+        Assert.Equal("InvalidRequest", response.Body.GetProperty("error").GetString());
+    }
+
+    [Fact]
+    public async Task SipBrowserSupportHttp_RejectsMalformedJson()
+    {
+        using var context = await StartSipServiceAsync();
+        var httpContext = CreateJsonRequest("""{"enabled":""");
+
+        var result = await SipHttpApi.SetBrowserSupportAsync(httpContext, context.Service, CancellationToken.None);
+        var response = await ExecuteResultAsync(result);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, response.StatusCode);
+        Assert.Equal("InvalidRequest", response.Body.GetProperty("error").GetString());
+    }
+
+    [Fact]
     public async Task SipBrowserSupportHttp_RejectsMissingEnabled()
     {
         using var context = await StartSipServiceAsync();

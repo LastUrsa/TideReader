@@ -720,19 +720,18 @@ public sealed class BridgeServiceBehaviorTests
     }
 
     [Fact]
-    public async Task SaveSettingsAsync_NormalizesSettings_AndCapturesOverlayErrors()
+    public async Task SaveSettingsAsync_NormalizesSettings()
     {
         using var harness = new BridgeServiceHarness();
         Settings? changedSettings = null;
         harness.Service.SettingsChanged += settings => changedSettings = settings;
 
         await harness.Service.InitializeAsync(CancellationToken.None);
-        harness.OverlayCoordinator.ThrowOnConfigure = new InvalidOperationException("overlay failed");
         var state = await harness.Service.SaveSettingsAsync(new Settings
         {
             OutputFolder = "",
             OverlayEnabled = true,
-            OverlayPort = 0,
+            OverlayPort = 17655,
             PollIntervalMs = 50,
             MetadataProviderMode = "bogus",
             ThemeMode = "bogus",
@@ -788,8 +787,55 @@ public sealed class BridgeServiceBehaviorTests
         Assert.Single(state.Settings.OverlayProfiles);
         Assert.Equal("Default", state.Settings.OverlayProfiles[0].Name);
         Assert.Equal(state.Settings.OverlaySettings.ImageSizePx, state.Settings.OverlayProfiles[0].OverlaySettings.ImageSizePx);
-        Assert.Equal("overlay failed", state.LastError);
+        Assert.Equal("", state.LastError);
         Assert.Equal(state.Settings.OutputFolder, harness.Settings.OutputFolder);
+    }
+
+    [Fact]
+    public async Task SaveSettingsAsync_RejectsInvalidOverlayPort()
+    {
+        using var harness = new BridgeServiceHarness();
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => harness.Service.SaveSettingsAsync(new Settings
+        {
+            OutputFolder = harness.Settings.OutputFolder,
+            OverlayEnabled = true,
+            OverlayPort = 70000,
+            PollIntervalMs = 1000,
+            MetadataProviderMode = nameof(MetadataProviderMode.Off),
+            ThemeMode = nameof(ThemeMode.Dark),
+            OverlaySettings = new OverlaySettings()
+        }, CancellationToken.None));
+
+        Assert.Contains("Overlay port must be between 1 and 65535.", ex.Message);
+        Assert.Equal(17655, harness.Settings.OverlayPort);
+    }
+
+    [Fact]
+    public async Task SaveSettingsAsync_RejectsOverlayStartupFailure_WithoutPersistingSettings()
+    {
+        using var harness = new BridgeServiceHarness();
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        harness.OverlayCoordinator.ThrowOnConfigure = new InvalidOperationException("overlay failed");
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(() => harness.Service.SaveSettingsAsync(new Settings
+        {
+            OutputFolder = harness.Settings.OutputFolder,
+            OverlayEnabled = true,
+            OverlayPort = 19000,
+            PollIntervalMs = 750,
+            MetadataProviderMode = nameof(MetadataProviderMode.Off),
+            ThemeMode = nameof(ThemeMode.Dark),
+            OverlaySettings = new OverlaySettings()
+        }, CancellationToken.None));
+
+        Assert.Contains("Overlay could not be configured: overlay failed", ex.Message);
+        Assert.False(harness.Settings.OverlayEnabled);
+        Assert.Equal(17655, harness.Settings.OverlayPort);
+        Assert.Equal(1000, harness.Settings.PollIntervalMs);
     }
 
     [Fact]

@@ -57,7 +57,7 @@ public sealed class BridgeService
     public async Task InitializeAsync(CancellationToken cancellationToken)
     {
         _settings = await _settingsStore.LoadAsync(cancellationToken);
-        NormalizeSettings(_settings, fallbackInvalidOutputFolder: true);
+        NormalizeSettings(_settings, fallbackInvalidOutputFolder: true, fallbackInvalidOverlayPort: true);
         _overlaySettingsSnapshotStore.Update(_settings.OverlaySettings);
         _metadataProviderMode = ParseMetadataProviderMode(_settings.MetadataProviderMode);
         await ConfigureOverlayAsync(cancellationToken);
@@ -150,7 +150,21 @@ public sealed class BridgeService
 
     public async Task<AppState> SaveSettingsAsync(Settings settings, CancellationToken cancellationToken)
     {
-        NormalizeSettings(settings, fallbackInvalidOutputFolder: false);
+        try
+        {
+            NormalizeSettings(settings, fallbackInvalidOutputFolder: false, fallbackInvalidOverlayPort: false);
+            await ConfigureOverlayAsync(settings, cancellationToken);
+        }
+        catch (ArgumentException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.Info($"overlay error: {ex.Message}");
+            throw new ArgumentException($"Overlay could not be configured: {ex.Message}", ex);
+        }
+
         await _settingsStore.SaveAsync(settings, cancellationToken);
 
         lock (_lock)
@@ -158,19 +172,7 @@ public sealed class BridgeService
             _settings = settings;
             _overlaySettingsSnapshotStore.Update(settings.OverlaySettings);
             _metadataProviderMode = ParseMetadataProviderMode(settings.MetadataProviderMode);
-        }
-
-        try
-        {
-            await ConfigureOverlayAsync(cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            lock (_lock)
-            {
-                _lastError = ex.Message;
-            }
-            _logger.Info($"overlay error: {ex.Message}");
+            _lastError = "";
         }
 
         _logger.Info($"settings updated: output={settings.OutputFolder} overlay={settings.OverlayEnabled} port={settings.OverlayPort} interval={settings.PollIntervalMs}ms metadata={settings.MetadataProviderMode}");
@@ -1068,7 +1070,7 @@ public sealed class BridgeService
         }
     }
 
-    private void NormalizeSettings(Settings settings, bool fallbackInvalidOutputFolder)
+    private void NormalizeSettings(Settings settings, bool fallbackInvalidOutputFolder, bool fallbackInvalidOverlayPort = false)
     {
         if (string.IsNullOrWhiteSpace(settings.OutputFolder))
         {
@@ -1085,8 +1087,13 @@ public sealed class BridgeService
             _logger.Info("invalid output folder in persisted settings; reverted to default output folder");
         }
 
-        if (settings.OverlayPort <= 0)
+        if (settings.OverlayPort is < 1 or > 65535)
         {
+            if (!fallbackInvalidOverlayPort)
+            {
+                throw new ArgumentException("Overlay port must be between 1 and 65535.", nameof(settings));
+            }
+
             settings.OverlayPort = 17655;
         }
         if (settings.PollIntervalMs < 250)
@@ -1115,8 +1122,13 @@ public sealed class BridgeService
             snapshot = CloneSettings(_settings);
         }
 
-        await _overlayServer.ConfigureAsync(snapshot.OverlayEnabled, snapshot.OverlayPort, cancellationToken);
-        OverlayStaticFileWriter.Write(snapshot.OutputFolder, snapshot.OverlayPort);
+        await ConfigureOverlayAsync(snapshot, cancellationToken);
+    }
+
+    private async Task ConfigureOverlayAsync(Settings settings, CancellationToken cancellationToken)
+    {
+        await _overlayServer.ConfigureAsync(settings.OverlayEnabled, settings.OverlayPort, cancellationToken);
+        OverlayStaticFileWriter.Write(settings.OutputFolder, settings.OverlayPort);
     }
 
     private static MetadataProviderMode ParseMetadataProviderMode(string value) =>

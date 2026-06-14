@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 import type { AppState } from './api';
 
@@ -255,6 +255,10 @@ function createDeferred<T>() {
 }
 
 describe('App', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   beforeEach(() => {
     delete (window as Window & { chrome?: unknown }).chrome;
     document.documentElement.removeAttribute('data-theme');
@@ -398,6 +402,19 @@ describe('App', () => {
     await waitFor(() => expect(apiMocks.openOutputFolder).toHaveBeenCalledOnce());
   });
 
+  it('shows feedback when opening the output folder fails', async () => {
+    apiMocks.openOutputFolder.mockRejectedValueOnce(new Error('folder missing'));
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Sample Track' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open output folder' }));
+
+    expect(await screen.findByText('Output folder could not be opened: Error: folder missing')).toBeInTheDocument();
+  });
+
   it('refreshes detection when asked', async () => {
     render(<App />);
 
@@ -405,6 +422,26 @@ describe('App', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
 
     await waitFor(() => expect(apiMocks.runDetectionNow).toHaveBeenCalledOnce());
+  });
+
+  it('shows feedback when refresh fails', async () => {
+    apiMocks.runDetectionNow.mockRejectedValueOnce(new Error('detector unavailable'));
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Sample Track' });
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+
+    expect(await screen.findByText('Refresh failed: Error: detector unavailable')).toBeInTheDocument();
+  });
+
+  it('shows backend unavailable feedback when state polling fails', async () => {
+    apiMocks.getState.mockRejectedValue(new Error('backend down'));
+
+    render(<App />);
+
+    expect(await screen.findByText('Backend unavailable')).toBeInTheDocument();
+    expect(screen.getByText('Backend unavailable: Error: backend down')).toBeInTheDocument();
   });
 
   it('checks for updates from the General tab and opens releases when available', async () => {
@@ -423,6 +460,21 @@ describe('App', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'View Releases' }));
     await waitFor(() => expect(apiMocks.openReleasePage).toHaveBeenCalledOnce());
+  });
+
+  it('shows feedback when opening the release page fails', async () => {
+    apiMocks.openReleasePage.mockRejectedValueOnce(new Error('blocked'));
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Sample Track' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Check for Updates' }));
+    await screen.findByText('Version 0.2.1 is available.');
+
+    fireEvent.click(screen.getByRole('button', { name: 'View Releases' }));
+
+    expect(await screen.findByText('Release page could not be opened: Error: blocked')).toBeInTheDocument();
   });
 
   it('shows an error when the update check fails', async () => {
@@ -483,6 +535,18 @@ describe('App', () => {
 
     await waitFor(() => expect(apiMocks.chooseOutputFolder).toHaveBeenCalledOnce());
     expect(screen.getByDisplayValue('C:\\Chosen')).toBeInTheDocument();
+  });
+
+  it('shows feedback when browsing for an output folder fails', async () => {
+    apiMocks.chooseOutputFolder.mockRejectedValueOnce(new Error('dialog failed'));
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Sample Track' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Browse' }));
+
+    expect(await screen.findByText('Output folder could not be selected: Error: dialog failed')).toBeInTheDocument();
   });
 
   it('saves overlay customization settings through the backend', async () => {
@@ -658,6 +722,41 @@ describe('App', () => {
     expect(saved.overlaySettings.showAppName).toBe(false);
   });
 
+  it('asks before discarding unsaved edits when switching overlay profiles', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const baseState = createState();
+    const state = createState({
+      settings: {
+        ...baseState.settings,
+        overlayProfiles: [
+          baseState.settings.overlayProfiles[0],
+          {
+            id: 'minimal',
+            name: 'Minimal Overlay',
+            overlaySettings: {
+              ...baseState.settings.overlaySettings,
+              showAppName: false,
+            },
+          },
+        ],
+      },
+    });
+    apiMocks.getState.mockResolvedValue(state);
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Sample Track' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Overlay' }));
+    fireEvent.change(screen.getByLabelText('Overlay port'), {
+      target: { value: '19000' },
+    });
+    fireEvent.change(screen.getByLabelText('Overlay Profile'), { target: { value: 'minimal' } });
+
+    expect(confirmSpy).toHaveBeenCalledWith('Discard unsaved settings and switch overlay profiles?');
+    expect(apiMocks.saveSettings).not.toHaveBeenCalled();
+  });
+
   it('saves the current overlay as a unique profile name', async () => {
     const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('Default');
     apiMocks.saveSettings.mockImplementation(async (settings) => createState({ settings }));
@@ -719,6 +818,25 @@ describe('App', () => {
 
     await waitFor(() => expect(document.execCommand).toHaveBeenCalledWith('copy'));
     expect(screen.getByText('Copied')).toBeInTheDocument();
+  });
+
+  it('shows feedback when copying the overlay url fails', async () => {
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: vi.fn().mockRejectedValue(new Error('clipboard denied')),
+      },
+    });
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Sample Track' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Overlay' }));
+
+    fireEvent.click(screen.getByRole('button', { name: /http:\/\/127\.0\.0\.1:17655\/overlay/i }));
+
+    expect(await screen.findByText('Overlay URL could not be copied: Error: clipboard denied')).toBeInTheDocument();
   });
 
   it('allows overlay sections to be collapsed and expanded', async () => {
@@ -978,6 +1096,70 @@ describe('App', () => {
 
     expect(screen.getAllByLabelText('Character limit')[0]).toHaveAttribute('aria-invalid', 'true');
     expect(screen.getByRole('button', { name: 'Save settings' })).toBeDisabled();
+  });
+
+  it('disables save when numeric settings are invalid', async () => {
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Sample Track' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.change(screen.getByLabelText('Poll interval (ms)'), {
+      target: { value: '100' },
+    });
+
+    expect(screen.getByLabelText('Poll interval (ms)')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('button', { name: 'Save settings' })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('Poll interval (ms)'), {
+      target: { value: '250' },
+    });
+    fireEvent.click(screen.getByRole('tab', { name: 'Browser' }));
+    fireEvent.change(screen.getByLabelText('Source switch cooldown (ms)'), {
+      target: { value: '-1' },
+    });
+
+    expect(screen.getByLabelText('Source switch cooldown (ms)')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('button', { name: 'Save settings' })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('Source switch cooldown (ms)'), {
+      target: { value: '0' },
+    });
+    fireEvent.change(screen.getByLabelText('Stale session timeout (seconds)'), {
+      target: { value: '0' },
+    });
+
+    expect(screen.getByLabelText('Stale session timeout (seconds)')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('button', { name: 'Save settings' })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('Stale session timeout (seconds)'), {
+      target: { value: '1' },
+    });
+    fireEvent.click(screen.getByRole('tab', { name: 'Overlay' }));
+    fireEvent.change(screen.getByLabelText('Overlay port'), {
+      target: { value: '70000' },
+    });
+
+    expect(screen.getByLabelText('Overlay port')).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('button', { name: 'Save settings' })).toBeDisabled();
+  });
+
+  it('asks before discarding unsaved settings on close', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValueOnce(false).mockReturnValueOnce(true);
+
+    render(<App />);
+
+    await screen.findByRole('heading', { name: 'Sample Track' });
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.change(screen.getByDisplayValue('C:\\Output'), {
+      target: { value: 'D:\\OBS' },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(confirmSpy).toHaveBeenCalledWith('Discard unsaved settings?');
+    expect(screen.getByRole('heading', { name: 'Settings' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+    expect(screen.queryByRole('heading', { name: 'Settings' })).not.toBeInTheDocument();
   });
 
   it('keeps the output folder unchanged when browse returns nothing', async () => {

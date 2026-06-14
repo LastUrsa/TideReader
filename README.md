@@ -95,6 +95,12 @@ The configured output folder receives `nowplaying.json`, `title.txt`, `artist.tx
 
 The overlay server defaults to `http://127.0.0.1:17655/overlay`; the backend API defaults to `http://127.0.0.1:17656`.
 
+## Settings Safety
+
+TideReader validates user-entered settings before saving. Overlay ports must be in the TCP range `1-65535`, polling must be at least `250` ms, browser source cooldowns cannot be negative, and stale-session timeouts must be positive. If the overlay cannot be started on the requested port, the save fails and the previous settings remain active.
+
+Older persisted settings are still normalized on startup where possible. For example, an invalid persisted overlay port falls back to `17655` so the app can recover from stale or hand-edited settings files.
+
 ## Notes
 
 - Browser support is metadata-driven and depends on what Windows media sessions expose.

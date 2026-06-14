@@ -34,6 +34,7 @@ public sealed class OverlayTextStyle
     public string ColorHex { get; set; } = "#EBEBEB";
     public int FontSizePx { get; set; } = 24;
     public int MaxCharacters { get; set; }
+    public string TextOverflowMode { get; set; } = "Default";
     public bool Bold { get; set; } = true;
     public bool Italic { get; set; }
     public bool Underline { get; set; }

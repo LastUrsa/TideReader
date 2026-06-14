@@ -1,6 +1,7 @@
 using TideReader.Backend.Models;
 using TideReader.Backend.Services;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.FileProviders;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -159,10 +160,15 @@ public static class BackendHost
             });
         }
 
-        if (HasBundledFrontend(app.Environment.WebRootPath))
+        var bundledFrontendPath = HasBundledFrontend(options.WebRootPath)
+            ? Path.GetFullPath(options.WebRootPath!)
+            : null;
+
+        if (bundledFrontendPath is not null)
         {
-            app.UseDefaultFiles();
-            app.UseStaticFiles();
+            var frontendProvider = new PhysicalFileProvider(bundledFrontendPath);
+            app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = frontendProvider });
+            app.UseStaticFiles(new StaticFileOptions { FileProvider = frontendProvider });
         }
 
         app.MapGet("/api/state", (BridgeService bridgeService) => Results.Ok(bridgeService.GetState()));
@@ -232,9 +238,9 @@ public static class BackendHost
         });
         app.MapGet("/api/health", () => Results.Ok(new { ok = true }));
 
-        if (HasBundledFrontend(app.Environment.WebRootPath))
+        if (bundledFrontendPath is not null)
         {
-            app.MapFallbackToFile("index.html");
+            app.MapFallback(() => Results.File(Path.Combine(bundledFrontendPath, "index.html"), "text/html; charset=utf-8"));
         }
         else
         {

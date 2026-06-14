@@ -17,6 +17,9 @@ public sealed class OverlayResponseBuilderTests
         Assert.NotEmpty(response.Body);
         Assert.Contains("border-radius: 0;", html);
         Assert.Contains("truncateText", html);
+        Assert.Contains("setSmartText", html);
+        Assert.Contains("textOverflowMode", html);
+        Assert.Contains("smart-text-marquee", html);
         Assert.Contains("overlayContainerStyle", html);
         Assert.Contains("backgroundMode", html);
         Assert.Contains("gradient", html);
@@ -72,9 +75,9 @@ public sealed class OverlayResponseBuilderTests
         var settingsStore = new OverlaySettingsSnapshotStore();
         settingsStore.Update(new OverlaySettings
         {
-            SongTextStyle = new OverlayTextStyle { MaxCharacters = 18 },
-            ArtistTextStyle = new OverlayTextStyle { MaxCharacters = 12 },
-            AlbumTextStyle = new OverlayTextStyle { MaxCharacters = 8 },
+            SongTextStyle = new OverlayTextStyle { MaxCharacters = 18, TextOverflowMode = "Scroll" },
+            ArtistTextStyle = new OverlayTextStyle { MaxCharacters = 12, TextOverflowMode = "AutoSize" },
+            AlbumTextStyle = new OverlayTextStyle { MaxCharacters = 8, TextOverflowMode = "TwoLines" },
             BackgroundColorHex = "#112233",
             OverlayContainerStyle = new OverlayContainerStyle
             {
@@ -139,6 +142,9 @@ public sealed class OverlayResponseBuilderTests
         Assert.Equal(18, payload.SongTextStyle.MaxCharacters);
         Assert.Equal(12, payload.ArtistTextStyle.MaxCharacters);
         Assert.Equal(8, payload.AlbumTextStyle.MaxCharacters);
+        Assert.Equal("Scroll", payload.SongTextStyle.TextOverflowMode);
+        Assert.Equal("AutoSize", payload.ArtistTextStyle.TextOverflowMode);
+        Assert.Equal("TwoLines", payload.AlbumTextStyle.TextOverflowMode);
         Assert.False(payload.ShowAppName);
         Assert.False(payload.ShowPlaybackState);
     }

@@ -1,8 +1,11 @@
+export type TextOverflowMode = 'Default' | 'Scroll' | 'TwoLines' | 'AutoSize';
+
 export type OverlayTextStyle = {
   fontFamily: string;
   colorHex: string;
   fontSizePx: number;
   maxCharacters: number;
+  textOverflowMode: TextOverflowMode;
   bold: boolean;
   italic: boolean;
   underline: boolean;

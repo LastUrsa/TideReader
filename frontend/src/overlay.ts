@@ -26,6 +26,7 @@ export const gradientPresetsByColorCount: Record<2 | 3, readonly GradientSetting
 
 export const overlayBackgroundModeOptions = ['solid', 'gradient'] as const;
 export const gradientColorCountOptions = [2, 3] as const;
+export const textOverflowModeOptions = ['Default', 'Scroll', 'TwoLines', 'AutoSize'] as const;
 
 export const defaultOverlaySettings: OverlaySettings = {
   songTextStyle: {
@@ -33,6 +34,7 @@ export const defaultOverlaySettings: OverlaySettings = {
     colorHex: '#EBEBEB',
     fontSizePx: 24,
     maxCharacters: 0,
+    textOverflowMode: 'Default',
     bold: true,
     italic: false,
     underline: false,
@@ -42,6 +44,7 @@ export const defaultOverlaySettings: OverlaySettings = {
     colorHex: '#929498',
     fontSizePx: 15,
     maxCharacters: 0,
+    textOverflowMode: 'Default',
     bold: false,
     italic: false,
     underline: false,
@@ -51,6 +54,7 @@ export const defaultOverlaySettings: OverlaySettings = {
     colorHex: '#929498',
     fontSizePx: 15,
     maxCharacters: 0,
+    textOverflowMode: 'Default',
     bold: false,
     italic: false,
     underline: false,
@@ -171,9 +175,9 @@ export function createDefaultOverlayProfiles(): OverlayProfile[] {
 export function cloneOverlaySettings(settings: OverlaySettings): OverlaySettings {
   return {
     ...settings,
-    songTextStyle: { ...settings.songTextStyle },
-    artistTextStyle: { ...settings.artistTextStyle },
-    albumTextStyle: { ...settings.albumTextStyle },
+    songTextStyle: { ...defaultOverlaySettings.songTextStyle, ...settings.songTextStyle },
+    artistTextStyle: { ...defaultOverlaySettings.artistTextStyle, ...settings.artistTextStyle },
+    albumTextStyle: { ...defaultOverlaySettings.albumTextStyle, ...settings.albumTextStyle },
     overlayContainerStyle: {
       ...settings.overlayContainerStyle,
       gradient: { ...defaultOverlaySettings.overlayContainerStyle.gradient, ...settings.overlayContainerStyle.gradient },
@@ -226,6 +230,10 @@ export function isGradientColorCount(value: number): value is GradientSettings['
   return (gradientColorCountOptions as readonly number[]).includes(value);
 }
 
+export function isTextOverflowMode(value: string): value is OverlayTextStyle['textOverflowMode'] {
+  return (textOverflowModeOptions as readonly string[]).includes(value);
+}
+
 export function getGradientPresetOptions(colorCount: GradientSettings['colorCount']): readonly GradientSettings['preset'][] {
   return gradientPresetsByColorCount[colorCount];
 }
@@ -242,7 +250,11 @@ export function textAlignToCss(value: Settings['overlaySettings']['textAlign']):
 }
 
 export function overlayTextStyleHasErrors(style: OverlayTextStyle): boolean {
-  return !isValidHexColor(style.colorHex) || !isPositiveNumber(style.fontSizePx) || !isZeroOrPositiveNumber(style.maxCharacters) || !style.fontFamily.trim();
+  return !isValidHexColor(style.colorHex)
+    || !isPositiveNumber(style.fontSizePx)
+    || !isZeroOrPositiveNumber(style.maxCharacters)
+    || !isTextOverflowMode(style.textOverflowMode)
+    || !style.fontFamily.trim();
 }
 
 export function overlayContainerStyleHasErrors(style: OverlayContainerStyle): boolean {

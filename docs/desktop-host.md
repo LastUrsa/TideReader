@@ -40,6 +40,12 @@ Production requires a frontend build before publishing the desktop app.
 
 The desktop project copies `frontend/dist` into the publish output as `frontend-dist`. On launch, the desktop app starts the backend, syncs startup-on-login behavior, opens the WPF shell, and keeps running in the tray when minimized or closed.
 
+## Settings Validation
+
+The React settings UI validates numeric fields before sending changes to the backend, including overlay port range, poll interval, browser source cooldown, and stale-session timeout. The save button is disabled while these values are invalid.
+
+The backend repeats the important checks before persisting settings. User-initiated saves reject invalid overlay ports and verify that the overlay listener can be configured on the requested port before writing `settings.json`. This keeps a failed or occupied overlay port from replacing the last working configuration. During startup, invalid persisted settings are still normalized where possible so TideReader can recover from older or manually edited settings files.
+
 ## Service Mode
 
 `TideReader.exe --service` starts the same in-process backend and SIP listener without opening the main window. Service startup verifies that the backend health endpoint on `127.0.0.1:17656` and one SIP discovery port in `47030-47039` become reachable. If either endpoint does not become ready, the desktop process logs the startup failure and exits instead of remaining alive without usable local APIs.

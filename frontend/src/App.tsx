@@ -137,6 +137,22 @@ function settingsEqual(left: Settings, right: Settings): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function isValidOverlayPort(value: number): boolean {
+  return Number.isInteger(value) && value >= 1 && value <= 65535;
+}
+
+function isValidPollInterval(value: number): boolean {
+  return Number.isFinite(value) && value >= 250;
+}
+
+function isValidSourceSwitchCooldown(value: number): boolean {
+  return Number.isFinite(value) && value >= 0;
+}
+
+function isValidStaleSessionTimeout(value: number): boolean {
+  return Number.isFinite(value) && value > 0;
+}
+
 function normalizeColorHex(value: string): string | null {
   const trimmed = value.trim();
   const fullMatch = /^#[0-9A-Fa-f]{6}$/.test(trimmed);
@@ -226,12 +242,22 @@ function App() {
   const settingsOpenRef = useRef(settingsOpen);
   const copiedUrlTimerRef = useRef<number | null>(null);
   const shellFeedbackTimerRef = useRef<number | null>(null);
+  const backendUnavailableRef = useRef(false);
   const artworkUrl = state.nowPlaying.artworkPath ? getArtworkUrl(state.artworkRevision) : '';
   const hasArtwork = Boolean(artworkUrl) && !artworkFailed;
   const hideArtworkFallback = !hasArtwork && shouldHideArtworkFallback(state.nowPlaying);
   const effectiveThemeMode = settingsOpen ? draft.themeMode : state.settings.themeMode;
   const hasOverlayErrors = overlaySettingsHaveErrors(draft);
   const hasUnsavedChanges = !settingsEqual(draft, state.settings);
+  const pollIntervalInvalid = !isValidPollInterval(draft.pollIntervalMs);
+  const overlayPortInvalid = !isValidOverlayPort(draft.overlayPort);
+  const sourceSwitchCooldownInvalid = !isValidSourceSwitchCooldown(draft.browserSettings.sourceSwitchCooldownMs);
+  const staleSessionTimeoutInvalid = !isValidStaleSessionTimeout(draft.browserSettings.staleSessionAfterSeconds);
+  const hasSettingsErrors = hasOverlayErrors
+    || pollIntervalInvalid
+    || overlayPortInvalid
+    || sourceSwitchCooldownInvalid
+    || staleSessionTimeoutInvalid;
   const previewNowPlaying: DetectionResult = state.nowPlaying;
   const previewArtworkUrl = state.nowPlaying.artworkPath && !artworkFailed ? artworkUrl : '';
   const gradientPresetOptions = getGradientPresetOptions(draft.overlaySettings.overlayContainerStyle.gradient.colorCount);
@@ -278,12 +304,29 @@ function App() {
     let cancelled = false;
 
     const refresh = async () => {
-      const nextState = normalizeAppStateForFrontend(await getState());
-      if (cancelled) {
-        return;
+      try {
+        const nextState = normalizeAppStateForFrontend(await getState());
+        if (cancelled) {
+          return;
+        }
+        backendUnavailableRef.current = false;
+        setState(nextState);
+        setDraft((current) => (settingsOpenRef.current ? current : nextState.settings));
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+
+        setState((current) => ({
+          ...current,
+          statusMessage: current.statusMessage === 'Loading...' ? 'Backend unavailable' : current.statusMessage,
+          lastError: String(error),
+        }));
+        if (!backendUnavailableRef.current) {
+          backendUnavailableRef.current = true;
+          showShellFeedback('danger', `Backend unavailable: ${String(error)}`);
+        }
       }
-      setState(nextState);
-      setDraft((current) => (settingsOpenRef.current ? current : nextState.settings));
     };
 
     refresh();
@@ -342,9 +385,13 @@ function App() {
       const nextState = normalizeAppStateForFrontend(await saveSettingsApi(settings));
       setState(nextState);
       setDraft(nextState.settings);
-      showShellFeedback('success', successMessage);
+      if (nextState.lastError) {
+        showShellFeedback('warning', nextState.lastError);
+      } else {
+        showShellFeedback('success', successMessage);
+      }
       if (closeAfterSave) {
-        closeSettings();
+        closeSettings(true);
       }
     } catch (error) {
       setSaveError(`Settings could not be saved: ${String(error)}`);
@@ -371,6 +418,9 @@ function App() {
   const selectOverlayProfile = async (profileId: string) => {
     const profile = overlayProfiles.find((item) => item.id === profileId);
     if (!profile) {
+      return;
+    }
+    if (hasUnsavedChanges && !window.confirm('Discard unsaved settings and switch overlay profiles?')) {
       return;
     }
 
@@ -423,7 +473,10 @@ function App() {
     setSettingsOpen(true);
   };
 
-  const closeSettings = () => {
+  const closeSettings = (force = false) => {
+    if (!force && hasUnsavedChanges && !window.confirm('Discard unsaved settings?')) {
+      return;
+    }
     setActiveTab('general');
     setActiveTextStyleTarget('song');
     setSaveError('');
@@ -431,24 +484,36 @@ function App() {
   };
 
   const chooseOutputFolder = async () => {
-    const folder = await chooseOutputFolderApi();
-    if (!folder) {
-      return;
-    }
+    try {
+      const folder = await chooseOutputFolderApi();
+      if (!folder) {
+        return;
+      }
 
-    setDraft((current) => ({
-      ...current,
-      outputFolder: folder,
-    }));
+      setDraft((current) => ({
+        ...current,
+        outputFolder: folder,
+      }));
+    } catch (error) {
+      showShellFeedback('danger', `Output folder could not be selected: ${String(error)}`);
+    }
   };
 
   const runNow = async () => {
-    const nextState = await runDetectionNowApi();
-    setState(nextState);
+    try {
+      const nextState = await runDetectionNowApi();
+      setState(nextState);
+    } catch (error) {
+      showShellFeedback('danger', `Refresh failed: ${String(error)}`);
+    }
   };
 
   const openOutputFolder = async () => {
-    await openOutputFolderApi();
+    try {
+      await openOutputFolderApi();
+    } catch (error) {
+      showShellFeedback('danger', `Output folder could not be opened: ${String(error)}`);
+    }
   };
 
   const checkForUpdates = async () => {
@@ -464,17 +529,25 @@ function App() {
   };
 
   const openReleasePage = async () => {
-    await openReleasePageApi();
+    try {
+      await openReleasePageApi();
+    } catch (error) {
+      showShellFeedback('danger', `Release page could not be opened: ${String(error)}`);
+    }
   };
 
   const copyOverlayUrl = async () => {
-    await copyText(state.overlayUrl);
-    setCopiedOverlayUrl(true);
-    showShellFeedback('info', 'Overlay URL copied.');
-    if (copiedUrlTimerRef.current !== null) {
-      window.clearTimeout(copiedUrlTimerRef.current);
+    try {
+      await copyText(state.overlayUrl);
+      setCopiedOverlayUrl(true);
+      showShellFeedback('info', 'Overlay URL copied.');
+      if (copiedUrlTimerRef.current !== null) {
+        window.clearTimeout(copiedUrlTimerRef.current);
+      }
+      copiedUrlTimerRef.current = window.setTimeout(() => setCopiedOverlayUrl(false), 1600);
+    } catch (error) {
+      showShellFeedback('danger', `Overlay URL could not be copied: ${String(error)}`);
     }
-    copiedUrlTimerRef.current = window.setTimeout(() => setCopiedOverlayUrl(false), 1600);
   };
 
   return (
@@ -544,7 +617,7 @@ function App() {
                 type="button"
                 aria-label="Close settings"
                 title="Close settings"
-                onClick={closeSettings}
+                onClick={() => closeSettings()}
               >
                 X
               </button>
@@ -573,7 +646,14 @@ function App() {
                 <div className="field-grid settings-grid settings-grid-general">
                   <label className="field-span-compact">
                     Poll interval (ms)
-                    <input className="field-control field-control-compact" type="number" value={draft.pollIntervalMs} onChange={(event) => setDraft({ ...draft, pollIntervalMs: Number(event.target.value) })} />
+                    <input
+                      aria-invalid={pollIntervalInvalid}
+                      className={`field-control field-control-compact ${pollIntervalInvalid ? 'invalid-field' : ''}`.trim()}
+                      min={250}
+                      type="number"
+                      value={draft.pollIntervalMs}
+                      onChange={(event) => setDraft({ ...draft, pollIntervalMs: Number(event.target.value) })}
+                    />
                   </label>
                   <label className="field-span-medium">
                     <span>Theme mode</span>
@@ -695,13 +775,20 @@ function App() {
                     </label>
                     <label className="field-span-compact">
                       Source switch cooldown (ms)
-                      <input className="field-control field-control-compact" type="number" value={draft.browserSettings.sourceSwitchCooldownMs} onChange={(event) => setDraft({
-                        ...draft,
-                        browserSettings: {
-                          ...draft.browserSettings,
-                          sourceSwitchCooldownMs: Number(event.target.value),
-                        },
-                      })} />
+                      <input
+                        aria-invalid={sourceSwitchCooldownInvalid}
+                        className={`field-control field-control-compact ${sourceSwitchCooldownInvalid ? 'invalid-field' : ''}`.trim()}
+                        min={0}
+                        type="number"
+                        value={draft.browserSettings.sourceSwitchCooldownMs}
+                        onChange={(event) => setDraft({
+                          ...draft,
+                          browserSettings: {
+                            ...draft.browserSettings,
+                            sourceSwitchCooldownMs: Number(event.target.value),
+                          },
+                        })}
+                      />
                     </label>
                   </div>
                   <div className="toggle-list toggle-grid">
@@ -758,13 +845,20 @@ function App() {
                   <div className="field-grid settings-grid">
                     <label className="field-span-compact">
                       Stale session timeout (seconds)
-                      <input className="field-control field-control-compact" type="number" value={draft.browserSettings.staleSessionAfterSeconds} onChange={(event) => setDraft({
-                        ...draft,
-                        browserSettings: {
-                          ...draft.browserSettings,
-                          staleSessionAfterSeconds: Number(event.target.value),
-                        },
-                      })} />
+                      <input
+                        aria-invalid={staleSessionTimeoutInvalid}
+                        className={`field-control field-control-compact ${staleSessionTimeoutInvalid ? 'invalid-field' : ''}`.trim()}
+                        min={1}
+                        type="number"
+                        value={draft.browserSettings.staleSessionAfterSeconds}
+                        onChange={(event) => setDraft({
+                          ...draft,
+                          browserSettings: {
+                            ...draft.browserSettings,
+                            staleSessionAfterSeconds: Number(event.target.value),
+                          },
+                        })}
+                      />
                     </label>
                   </div>
                   <div className="toggle-list toggle-grid">
@@ -843,14 +937,14 @@ function App() {
                       </select>
                     </label>
                     <div className="overlay-profile-actions">
-                      <button className="icon-button button-secondary" type="button" disabled={saving || hasOverlayErrors} onClick={() => void saveOverlayProfile()} aria-label="Save overlay profile" title="Save">
+                      <button className="icon-button button-secondary" type="button" disabled={saving || hasSettingsErrors} onClick={() => void saveOverlayProfile()} aria-label="Save overlay profile" title="Save">
                         <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
                           <path d="M5 3h12l2 2v16H5z" />
                           <path d="M8 3v6h8V3" />
                           <path d="M8 15h8v6H8z" />
                         </svg>
                       </button>
-                      <button className="icon-button button-secondary" type="button" disabled={saving || hasOverlayErrors} onClick={() => void saveOverlayProfileAs()} aria-label="Save overlay profile as" title="Save As">
+                      <button className="icon-button button-secondary" type="button" disabled={saving || hasSettingsErrors} onClick={() => void saveOverlayProfileAs()} aria-label="Save overlay profile as" title="Save As">
                         <svg aria-hidden="true" viewBox="0 0 24 24" focusable="false">
                           <path d="M5 3h10l4 4v14H5z" />
                           <path d="M8 3v6h7" />
@@ -915,7 +1009,15 @@ function App() {
                       </div>
                       <label className="field-span-compact">
                         Overlay port
-                        <input className="field-control field-control-compact" type="number" value={draft.overlayPort} onChange={(event) => setDraft({ ...draft, overlayPort: Number(event.target.value) })} />
+                        <input
+                          aria-invalid={overlayPortInvalid}
+                          className={`field-control field-control-compact ${overlayPortInvalid ? 'invalid-field' : ''}`.trim()}
+                          min={1}
+                          max={65535}
+                          type="number"
+                          value={draft.overlayPort}
+                          onChange={(event) => setDraft({ ...draft, overlayPort: Number(event.target.value) })}
+                        />
                       </label>
                     </div>
                   </CollapsibleSection>
@@ -1188,7 +1290,7 @@ function App() {
                     </div>
                   </CollapsibleSection>
 
-                  <p className="note">Hex colors must use `#RGB` or `#RRGGBB`. Save is disabled while any overlay field is invalid.</p>
+                  <p className="note">Hex colors must use `#RGB` or `#RRGGBB`. Save is disabled while any settings field is invalid.</p>
                 </div>
 
                 <aside className="overlay-preview-pane">
@@ -1217,8 +1319,8 @@ function App() {
                 {hasUnsavedChanges ? <p className="settings-dirty-indicator">Unsaved changes</p> : <span className="settings-dirty-spacer" aria-hidden="true" />}
                 {saveError ? <p className="inline-feedback danger">{saveError}</p> : null}
               </div>
-              <button className="button-ghost" onClick={closeSettings}>Close</button>
-              <button className="button-primary" disabled={saving || hasOverlayErrors} onClick={saveSettings}>{saving ? 'Saving...' : 'Save settings'}</button>
+              <button className="button-ghost" onClick={() => closeSettings()}>Close</button>
+              <button className="button-primary" disabled={saving || hasSettingsErrors} onClick={saveSettings}>{saving ? 'Saving...' : 'Save settings'}</button>
             </div>
           </section>
         </div>

@@ -5,7 +5,7 @@ import './App.css';
 import tideReaderIcon from './assets/images/TideReaderIcon.png';
 import NowPlayingOverlayView from './NowPlayingOverlayView';
 import { AppState, DetectionResult, GradientSettings, OverlayProfile, OverlayTextStyle, Settings, UpdateInfo, checkForUpdates as checkForUpdatesApi, chooseOutputFolder as chooseOutputFolderApi, getArtworkUrl, getState, getSystemFonts, openOutputFolder as openOutputFolderApi, openReleasePage as openReleasePageApi, runDetectionNow as runDetectionNowApi, saveSettings as saveSettingsApi } from './api';
-import { cloneOverlayProfile, cloneOverlayProfiles, cloneOverlaySettings, createDefaultOverlayProfiles, createDefaultSettings, defaultOverlaySettings, formatPlaybackStatus, getAlbumDisplayText, getArtistDisplayText, getGradientPresetOptions, gradientColorCountOptions, isGradientAngleValid, isOpacityValid, isPositiveNumber, isValidHexColor, isZeroOrPositiveNumber, overlayBackgroundModeOptions, overlaySettingsHaveErrors, overlayTextStyleHasErrors, shouldHideArtworkFallback } from './overlay';
+import { cloneOverlayProfile, cloneOverlayProfiles, cloneOverlaySettings, createDefaultOverlayProfiles, createDefaultSettings, defaultOverlaySettings, formatPlaybackStatus, getAlbumDisplayText, getArtistDisplayText, getGradientPresetOptions, gradientColorCountOptions, isGradientAngleValid, isOpacityValid, isPositiveNumber, isTextOverflowMode, isValidHexColor, isZeroOrPositiveNumber, overlayBackgroundModeOptions, overlaySettingsHaveErrors, overlayTextStyleHasErrors, shouldHideArtworkFallback, textOverflowModeOptions } from './overlay';
 
 type SettingsTab = 'general' | 'browser' | 'overlay';
 type OverlayTextTarget = 'song' | 'artist' | 'album';
@@ -202,6 +202,21 @@ function getUniqueOverlayProfileName(baseName: string, profiles: OverlayProfile[
   return `${trimmedBase} ${suffix}`;
 }
 
+function normalizeSettingsForFrontend(settings: Settings): Settings {
+  return {
+    ...settings,
+    overlaySettings: cloneOverlaySettings(settings.overlaySettings),
+    overlayProfiles: cloneOverlayProfiles(ensureOverlayProfiles(settings)),
+  };
+}
+
+function normalizeAppStateForFrontend(nextState: AppState): AppState {
+  return {
+    ...nextState,
+    settings: normalizeSettingsForFrontend(nextState.settings),
+  };
+}
+
 function App() {
   const [state, setState] = useState<AppState>(emptyState);
   const [draft, setDraft] = useState<Settings>(emptyState.settings);
@@ -290,7 +305,7 @@ function App() {
 
     const refresh = async () => {
       try {
-        const nextState = await getState();
+        const nextState = normalizeAppStateForFrontend(await getState());
         if (cancelled) {
           return;
         }
@@ -367,7 +382,7 @@ function App() {
     setSaving(true);
     setSaveError('');
     try {
-      const nextState = await saveSettingsApi(settings);
+      const nextState = normalizeAppStateForFrontend(await saveSettingsApi(settings));
       setState(nextState);
       setDraft(nextState.settings);
       if (nextState.lastError) {
@@ -386,7 +401,18 @@ function App() {
   };
 
   const saveSettings = async () => {
-    await persistSettings(draft, 'Settings saved.', true);
+    const profiles = overlayProfiles.map((profile) => profile.id === activeOverlayProfile.id
+      ? {
+          ...cloneOverlayProfile(profile),
+          overlaySettings: cloneOverlaySettings(draft.overlaySettings),
+        }
+      : cloneOverlayProfile(profile));
+
+    await persistSettings({
+      ...draft,
+      overlayProfiles: profiles,
+      activeOverlayProfileId: activeOverlayProfile.id,
+    }, 'Settings saved.', true);
   };
 
   const selectOverlayProfile = async (profileId: string) => {
@@ -1578,6 +1604,7 @@ function TextStyleEditor({ title, fontOptions, value, onChange }: { title: strin
   const fontSizeValid = isPositiveNumber(value.fontSizePx);
   const fontFamilyValid = Boolean(value.fontFamily.trim());
   const maxCharactersValid = isZeroOrPositiveNumber(value.maxCharacters);
+  const textOverflowModeValid = isTextOverflowMode(value.textOverflowMode);
 
   return (
     <section className="subsection-card">
@@ -1622,13 +1649,29 @@ function TextStyleEditor({ title, fontOptions, value, onChange }: { title: strin
           invalid={!maxCharactersValid}
           onChange={(next) => onChange({ ...value, maxCharacters: next })}
         />
+        <label className="field-span-medium">
+          Text overflow mode
+          <select
+            aria-invalid={!textOverflowModeValid}
+            className={`field-control field-control-medium ${!textOverflowModeValid ? 'invalid-field' : ''}`}
+            value={value.textOverflowMode}
+            onChange={(event) => onChange({ ...value, textOverflowMode: event.target.value as OverlayTextStyle['textOverflowMode'] })}
+          >
+            {textOverflowModeOptions.map((mode) => (
+              <option key={mode} value={mode}>{mode === 'TwoLines' ? 'Two Lines' : mode === 'AutoSize' ? 'Auto Size' : mode}</option>
+            ))}
+          </select>
+        </label>
       </div>
       <div className="toggle-list toggle-grid toggle-grid-compact">
         <Toggle label="Bold" checked={value.bold} onChange={(next) => onChange({ ...value, bold: next })} />
         <Toggle label="Italic" checked={value.italic} onChange={(next) => onChange({ ...value, italic: next })} />
         <Toggle label="Underline" checked={value.underline} onChange={(next) => onChange({ ...value, underline: next })} />
       </div>
-      {overlayTextStyleHasErrors(value) ? <p className="note">Enter a valid font family, positive font size, non-negative character limit, and `#RGB` or `#RRGGBB` color.</p> : null}
+      {value.textOverflowMode !== 'Default' && value.maxCharacters > 0 ? (
+        <p className="note">Smart Text Handling works best when character limits are disabled. Consider setting this field's character limit to 0 if you want the full text displayed.</p>
+      ) : null}
+      {overlayTextStyleHasErrors(value) ? <p className="note">Enter a valid font family, positive font size, non-negative character limit, text overflow mode, and `#RGB` or `#RRGGBB` color.</p> : null}
     </section>
   );
 }

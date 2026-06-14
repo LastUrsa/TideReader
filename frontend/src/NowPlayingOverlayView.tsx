@@ -1,4 +1,5 @@
-import type { CSSProperties } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
+import type { CSSProperties, ElementType } from 'react';
 import type { DetectionResult, OverlaySettings } from './api';
 import { formatPlaybackStatus, getAlbumDisplayText, getArtistDisplayText, getOverlayContainerBackground, truncateOverlayText, withAlpha } from './overlay';
 
@@ -21,6 +22,100 @@ function textStyleToCss(style: OverlaySettings['songTextStyle']): CSSProperties 
     fontStyle: style.italic ? 'italic' : 'normal',
     textDecoration: style.underline ? 'underline' : 'none',
   };
+}
+
+type SmartOverlayTextProps = {
+  as: ElementType;
+  className: string;
+  style: OverlaySettings['songTextStyle'];
+  children: string;
+};
+
+function SmartOverlayText({ as: Component, className, style, children }: SmartOverlayTextProps) {
+  const containerRef = useRef<HTMLElement | null>(null);
+  const measureRef = useRef<HTMLSpanElement | null>(null);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+  const [autoSizePx, setAutoSizePx] = useState(style.fontSizePx);
+  const mode = style.textOverflowMode ?? 'Default';
+
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    const measure = measureRef.current;
+    if (!container || !measure || mode === 'Default' || mode === 'TwoLines') {
+      setIsOverflowing(false);
+      setAutoSizePx(style.fontSizePx);
+      return undefined;
+    }
+
+    const update = () => {
+      const availableWidth = container.clientWidth;
+      if (availableWidth <= 0) {
+        setIsOverflowing(false);
+        setAutoSizePx(style.fontSizePx);
+        return;
+      }
+
+      measure.style.fontSize = `${style.fontSizePx}px`;
+      const fullWidth = measure.scrollWidth;
+      const overflowing = fullWidth > availableWidth + 1;
+      setIsOverflowing(overflowing);
+
+      if (mode === 'AutoSize' && overflowing) {
+        const minimumSize = Math.max(1, Math.round(style.fontSizePx * 0.6));
+        const fittedSize = Math.max(minimumSize, Math.floor((availableWidth / fullWidth) * style.fontSizePx));
+        setAutoSizePx(fittedSize);
+      } else {
+        setAutoSizePx(style.fontSizePx);
+      }
+    };
+
+    update();
+    if (typeof ResizeObserver === 'undefined') {
+      return undefined;
+    }
+
+    const resizeObserver = new ResizeObserver(update);
+    resizeObserver.observe(container);
+    return () => resizeObserver.disconnect();
+  }, [children, mode, style.fontFamily, style.fontSizePx, style.bold, style.italic, style.underline]);
+
+  const cssStyle = textStyleToCss(style);
+  const smartStyle = {
+    ...cssStyle,
+    ...(mode === 'AutoSize' ? { fontSize: `${autoSizePx}px` } : {}),
+  };
+  const shouldScroll = mode === 'Scroll' && isOverflowing;
+
+  if (mode === 'Default') {
+    return (
+      <Component
+        className={`${className} smart-text smart-text-default`.trim()}
+        style={cssStyle}
+        data-overflow-mode={mode}
+      >
+        {children}
+      </Component>
+    );
+  }
+
+  return (
+    <Component
+      ref={containerRef}
+      className={`${className} smart-text smart-text-${mode.toLowerCase()} ${shouldScroll ? 'is-scrolling' : ''}`.trim()}
+      style={smartStyle}
+      data-overflow-mode={mode}
+    >
+      <span className="smart-text-measure" ref={measureRef} aria-hidden="true">{children}</span>
+      {shouldScroll ? (
+        <span className="smart-text-scroll-track">
+          <span>{children}</span>
+          <span aria-hidden="true">{children}</span>
+        </span>
+      ) : (
+        <span className="smart-text-content">{children}</span>
+      )}
+    </Component>
+  );
 }
 
 export default function NowPlayingOverlayView({
@@ -96,15 +191,15 @@ export default function NowPlayingOverlayView({
             ) : null}
           </div>
         ) : null}
-        <h1 className="np-overlay-title" style={textStyleToCss(overlaySettings.songTextStyle)}>
+        <SmartOverlayText as="h1" className="np-overlay-title" style={overlaySettings.songTextStyle}>
           {truncateOverlayText(nowPlaying.title, overlaySettings.songTextStyle.maxCharacters, titleFallback)}
-        </h1>
-        <p className="np-artist-line" style={textStyleToCss(overlaySettings.artistTextStyle)}>
+        </SmartOverlayText>
+        <SmartOverlayText as="p" className="np-artist-line" style={overlaySettings.artistTextStyle}>
           {truncateOverlayText(getArtistDisplayText(nowPlaying, artistFallback), overlaySettings.artistTextStyle.maxCharacters, artistFallback)}
-        </p>
-        <p className="np-album-line" style={textStyleToCss(overlaySettings.albumTextStyle)}>
+        </SmartOverlayText>
+        <SmartOverlayText as="p" className="np-album-line" style={overlaySettings.albumTextStyle}>
           {truncateOverlayText(getAlbumDisplayText(nowPlaying, albumFallback), overlaySettings.albumTextStyle.maxCharacters, albumFallback)}
-        </p>
+        </SmartOverlayText>
       </div>
     </section>
   );

@@ -217,6 +217,82 @@
   line-height: 1.08;
 }
 
+.smart-text {
+  display: block;
+  max-width: 100%;
+  min-width: 0;
+  position: relative;
+}
+
+.smart-text-content {
+  display: block;
+}
+
+.smart-text-scroll .smart-text-content,
+.smart-text-autosize .smart-text-content {
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+.smart-text-twolines .smart-text-content {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  white-space: normal;
+}
+
+.smart-text-scroll,
+.smart-text-twolines,
+.smart-text-autosize {
+  line-height: 1.25;
+  margin-bottom: -0.16em;
+  overflow: hidden;
+  overflow-wrap: normal;
+  padding-bottom: 0.16em;
+}
+
+.smart-text-measure {
+  left: 0;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  visibility: hidden;
+  white-space: nowrap;
+}
+
+.smart-text-scroll-track {
+  animation: smart-text-marquee 12s linear infinite;
+  display: none;
+  gap: 2em;
+  min-width: max-content;
+  white-space: nowrap;
+}
+
+.smart-text.is-scrolling .smart-text-content {
+  display: none;
+}
+
+.smart-text.is-scrolling .smart-text-scroll-track {
+  display: inline-flex;
+}
+
+.smart-text-scroll-track span {
+  display: inline-block;
+}
+
+@keyframes smart-text-marquee {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(calc(-50% - 1em));
+  }
+}
+
 .artist-line,
 .album-line {
   margin: 2px 0 0;

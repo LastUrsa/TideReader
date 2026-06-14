@@ -6,7 +6,7 @@ Windows desktop app for publishing now-playing data and an OBS-friendly overlay 
 
 - Detects TIDAL desktop playback and browser media sessions from Chrome, Edge, and Firefox.
 - Publishes text, JSON, artwork, and browser-overlay outputs for OBS workflows.
-- Includes overlay styling, color picking, live preview, saved profiles, source selection, browser-session diagnostics, and update checks.
+- Includes overlay styling, Smart Text overflow handling, color picking, live preview, saved profiles, source selection, browser-session diagnostics, and update checks.
 - Exposes a localhost-only SIP v1 API for same-machine integrations such as LivePanel.
 
 ## Stack
@@ -95,6 +95,8 @@ The configured output folder receives `nowplaying.json`, `title.txt`, `artist.tx
 
 The overlay server defaults to `http://127.0.0.1:17655/overlay`; the backend API defaults to `http://127.0.0.1:17656`.
 
+Overlay text fields support Smart Text overflow modes per profile: default clipping, horizontal scrolling, two-line wrapping, and automatic font sizing. Character limits still apply first, so set a field's character limit to `0` when the full title, artist, or album should be handled by Smart Text.
+
 ## Settings Safety
 
 TideReader validates user-entered settings before saving. Overlay ports must be in the TCP range `1-65535`, polling must be at least `250` ms, browser source cooldowns cannot be negative, and stale-session timeouts must be positive. If the overlay cannot be started on the requested port, the save fails and the previous settings remain active.
@@ -104,4 +106,5 @@ Older persisted settings are still normalized on startup where possible. For exa
 ## Notes
 
 - Browser support is metadata-driven and depends on what Windows media sessions expose.
+- For TIDAL desktop playback, Windows media sessions provide the authoritative title and playback state. When the TIDAL window title exposes a richer artist credit for the same track, TideReader uses that artist list for outputs and overlays.
 - The app only reads local now-playing session data and writes local outputs. It does not use browser extensions, scraping, account auth, or playback controls.

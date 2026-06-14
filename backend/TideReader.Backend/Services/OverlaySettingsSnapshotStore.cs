@@ -44,6 +44,7 @@ public sealed class OverlaySettingsSnapshotStore : IOverlaySettingsSnapshotStore
         ColorHex = style.ColorHex,
         FontSizePx = style.FontSizePx,
         MaxCharacters = style.MaxCharacters,
+        TextOverflowMode = style.TextOverflowMode,
         Bold = style.Bold,
         Italic = style.Italic,
         Underline = style.Underline

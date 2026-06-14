@@ -61,3 +61,5 @@ TIDAL playback data reaches the app through Windows media-session APIs first. Th
 - `MusicBrainzWithFallbacks`: use MusicBrainz first, then fallback providers when needed
 
 The backend logs which provider supplied metadata so track-level issues can be diagnosed from the AppData log file without attaching a debugger.
+
+For TIDAL desktop playback, Windows media-session metadata can expose only the lead artist while the TIDAL window title includes the full artist credit. TideReader keeps the media-session title, playback state, and artwork as the authoritative track signal, then applies the richer window-title artist credit when the titles are compatible. Compatibility allows exact matches and safe version suffixes such as a media-session title ending in `(Chiptune Version)` when the window title omits that suffix. The richer artist credit is retained for the same media-session title if the window-title signal briefly drops, which prevents overlay and file outputs from flickering between the lead artist and the full artist list.

@@ -16,6 +16,7 @@ import {
   isOpacityValid,
   isOverlayBackgroundMode,
   isPositiveNumber,
+  isTextOverflowMode,
   isValidHexColor,
   isZeroOrPositiveNumber,
   overlayContainerStyleHasErrors,
@@ -88,6 +89,8 @@ describe('overlay helpers', () => {
     expect(isGradientPreset('Unknown')).toBe(false);
     expect(isGradientColorCount(2)).toBe(true);
     expect(isGradientColorCount(4)).toBe(false);
+    expect(isTextOverflowMode('Scroll')).toBe(true);
+    expect(isTextOverflowMode('Fade')).toBe(false);
   });
 
   it('formats alignment, status, truncation, and alpha colors', () => {
@@ -109,6 +112,7 @@ describe('overlay helpers', () => {
       fontSizePx: 0,
       fontFamily: '',
       maxCharacters: -1,
+      textOverflowMode: 'Fade' as never,
     };
     const badContainerStyle = {
       ...defaultOverlaySettings.overlayContainerStyle,
@@ -435,5 +439,36 @@ describe('NowPlayingOverlayView', () => {
     expect(screen.getByText('Playing')).toBeInTheDocument();
     expect(screen.getByRole('img', { name: 'Sample Song cover art' })).toHaveAttribute('src', '/cover.jpg');
     expect(screen.getByText('Sample Song')).toHaveStyle({ fontWeight: '700' });
+    expect(screen.getByText('Sample Song').closest('.smart-text')).toHaveAttribute('data-overflow-mode', 'Default');
+  });
+
+  it('marks smart text modes for rendering', () => {
+    const settings = createOverlaySettings({
+      songTextStyle: {
+        ...defaultOverlaySettings.songTextStyle,
+        textOverflowMode: 'Scroll',
+      },
+      artistTextStyle: {
+        ...defaultOverlaySettings.artistTextStyle,
+        textOverflowMode: 'TwoLines',
+      },
+      albumTextStyle: {
+        ...defaultOverlaySettings.albumTextStyle,
+        textOverflowMode: 'AutoSize',
+      },
+    });
+
+    render(
+      <NowPlayingOverlayView
+        overlaySettings={settings}
+        nowPlaying={createNowPlaying({ title: 'A Very Long Sample Song Title', artist: 'A Very Long Artist Name', album: 'A Very Long Album Name' })}
+        artworkAlt="Sample Song cover art"
+        fallbackMode="preview"
+      />,
+    );
+
+    expect(screen.getAllByText('A Very Long Sample Song Title')[0].closest('.smart-text')).toHaveAttribute('data-overflow-mode', 'Scroll');
+    expect(screen.getAllByText('A Very Long Artist Name')[0].closest('.smart-text')).toHaveAttribute('data-overflow-mode', 'TwoLines');
+    expect(screen.getAllByText('A Very Long Album Name')[0].closest('.smart-text')).toHaveAttribute('data-overflow-mode', 'AutoSize');
   });
 });

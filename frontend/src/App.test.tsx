@@ -50,6 +50,7 @@ function createState(overrides?: Partial<AppState>): AppState {
           colorHex: '#EBEBEB',
           fontSizePx: 24,
           maxCharacters: 0,
+          textOverflowMode: 'Default',
           bold: true,
           italic: false,
           underline: false,
@@ -59,6 +60,7 @@ function createState(overrides?: Partial<AppState>): AppState {
           colorHex: '#929498',
           fontSizePx: 15,
           maxCharacters: 0,
+          textOverflowMode: 'Default',
           bold: false,
           italic: false,
           underline: false,
@@ -68,6 +70,7 @@ function createState(overrides?: Partial<AppState>): AppState {
           colorHex: '#929498',
           fontSizePx: 15,
           maxCharacters: 0,
+          textOverflowMode: 'Default',
           bold: false,
           italic: false,
           underline: false,
@@ -121,6 +124,7 @@ function createState(overrides?: Partial<AppState>): AppState {
               colorHex: '#EBEBEB',
               fontSizePx: 24,
               maxCharacters: 0,
+              textOverflowMode: 'Default',
               bold: true,
               italic: false,
               underline: false,
@@ -130,6 +134,7 @@ function createState(overrides?: Partial<AppState>): AppState {
               colorHex: '#929498',
               fontSizePx: 15,
               maxCharacters: 0,
+              textOverflowMode: 'Default',
               bold: false,
               italic: false,
               underline: false,
@@ -139,6 +144,7 @@ function createState(overrides?: Partial<AppState>): AppState {
               colorHex: '#929498',
               fontSizePx: 15,
               maxCharacters: 0,
+              textOverflowMode: 'Default',
               bold: false,
               italic: false,
               underline: false,
@@ -570,6 +576,10 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('Character limit'), {
       target: { value: '18' },
     });
+    fireEvent.change(screen.getByLabelText('Text overflow mode'), {
+      target: { value: 'Scroll' },
+    });
+    expect(screen.getByText(/Smart Text Handling works best/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('tab', { name: 'Artist' }));
     fireEvent.change(screen.getAllByLabelText('Font family')[0], {
       target: { value: 'Tahoma' },
@@ -577,10 +587,16 @@ describe('App', () => {
     fireEvent.change(screen.getByLabelText('Character limit'), {
       target: { value: '12' },
     });
+    fireEvent.change(screen.getByLabelText('Text overflow mode'), {
+      target: { value: 'AutoSize' },
+    });
     fireEvent.click(screen.getAllByLabelText('Italic')[0]);
     fireEvent.click(screen.getByRole('tab', { name: 'Album' }));
     fireEvent.change(screen.getByLabelText('Character limit'), {
       target: { value: '8' },
+    });
+    fireEvent.change(screen.getByLabelText('Text overflow mode'), {
+      target: { value: 'TwoLines' },
     });
     fireEvent.click(screen.getAllByLabelText('Underline')[0]);
     fireEvent.change(screen.getByLabelText('Artwork image size (px)'), {
@@ -617,14 +633,17 @@ describe('App', () => {
           colorHex: '#112233',
           fontSizePx: 30,
           maxCharacters: 18,
+          textOverflowMode: 'Scroll',
         }),
         artistTextStyle: expect.objectContaining({
           fontFamily: 'Tahoma',
           maxCharacters: 12,
+          textOverflowMode: 'AutoSize',
           italic: true,
         }),
         albumTextStyle: expect.objectContaining({
           maxCharacters: 8,
+          textOverflowMode: 'TwoLines',
           underline: true,
         }),
         imageSizePx: 92,
@@ -644,6 +663,22 @@ describe('App', () => {
         showAppName: false,
         showPlaybackState: false,
       }),
+      overlayProfiles: expect.arrayContaining([
+        expect.objectContaining({
+          id: 'default',
+          overlaySettings: expect.objectContaining({
+            songTextStyle: expect.objectContaining({
+              textOverflowMode: 'Scroll',
+            }),
+            artistTextStyle: expect.objectContaining({
+              textOverflowMode: 'AutoSize',
+            }),
+            albumTextStyle: expect.objectContaining({
+              textOverflowMode: 'TwoLines',
+            }),
+          }),
+        }),
+      ]),
     })));
   });
 

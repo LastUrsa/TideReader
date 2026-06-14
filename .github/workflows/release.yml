@@ -144,21 +144,19 @@ jobs:
         env:
           WINDOWS_CODESIGN_PFX_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PFX_PASSWORD }}
         run: |
-          $packageArgs = @(
-            "-Version", "${{ steps.release_meta.outputs.version }}",
-            "-Runtime", "${{ steps.release_meta.outputs.runtime }}",
-            "-Configuration", "Release"
-          )
+          $packageArgs = @{
+            Version = "${{ steps.release_meta.outputs.version }}"
+            Runtime = "${{ steps.release_meta.outputs.runtime }}"
+            Configuration = "Release"
+          }
 
           if ("${{ steps.release_meta.outputs.self_contained }}" -eq "true") {
-            $packageArgs += "-SelfContained"
+            $packageArgs.SelfContained = $true
           }
 
           if ("${{ steps.code_signing.outputs.enabled }}" -eq "true") {
-            $packageArgs += @(
-              "-SigningCertificatePfxPath", "${{ steps.code_signing.outputs.pfx_path }}",
-              "-SigningCertificatePfxPassword", $env:WINDOWS_CODESIGN_PFX_PASSWORD
-            )
+            $packageArgs.SigningCertificatePfxPath = "${{ steps.code_signing.outputs.pfx_path }}"
+            $packageArgs.SigningCertificatePfxPassword = $env:WINDOWS_CODESIGN_PFX_PASSWORD
           }
 
           .\scripts\package-release.ps1 @packageArgs

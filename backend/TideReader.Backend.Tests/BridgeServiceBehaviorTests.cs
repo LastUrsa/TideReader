@@ -92,6 +92,129 @@ public sealed class BridgeServiceBehaviorTests
     }
 
     [Fact]
+    public async Task RunDetectionAsync_UsesWindowTitleArtistCredit_ForMatchingTidalMediaSession()
+    {
+        using var harness = new BridgeServiceHarness();
+        harness.Settings.EnableWindowTitleFallback = true;
+        harness.PlaybackDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Ian Martyn",
+            Title = "Somna Means Dreaming / My Dreams Are Real",
+            Source = "TIDAL",
+            Provider = "tidal",
+            Method = "media_session",
+            Confidence = 0.98,
+            MatcherReason = "windows_media_session"
+        });
+        harness.WindowTitleDetector.Result = new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Ian Martyn, Bucker Fuskyote, Darby Cupit, Leo Martyn, Ursa Starsong, Niko Fox, KOMODOMODE, Ampyluxe, Simon Shirley, Tuhsano, Yao, Kipp Kingdom",
+            Title = "Somna Means Dreaming / My Dreams Are Real",
+            Source = "TIDAL",
+            Provider = "tidal",
+            Method = "window_title",
+            Confidence = 0.72,
+            DetectedText = "Somna Means Dreaming / My Dreams Are Real - Ian Martyn, Bucker Fuskyote, Darby Cupit, Leo Martyn, Ursa Starsong, Niko Fox, KOMODOMODE, Ampyluxe, Simon Shirley, Tuhsano, Yao, Kipp Kingdom"
+        };
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        var state = await harness.Service.RunDetectionAsync(CancellationToken.None);
+
+        Assert.Equal("Somna Means Dreaming / My Dreams Are Real", state.NowPlaying.Title);
+        Assert.Equal("Ian Martyn, Bucker Fuskyote, Darby Cupit, Leo Martyn, Ursa Starsong, Niko Fox, KOMODOMODE, Ampyluxe, Simon Shirley, Tuhsano, Yao, Kipp Kingdom", state.NowPlaying.Artist);
+        Assert.Equal("media_session", state.NowPlaying.Method);
+        Assert.Equal("selected: media session with TIDAL window title artist credit", state.NowPlaying.SelectionReason);
+        Assert.Contains("window_title_artist_credit", state.NowPlaying.MatcherReason);
+    }
+
+    [Fact]
+    public async Task RunDetectionAsync_UsesWindowTitleArtistCredit_WhenTidalMediaSessionTitleHasVersionSuffix()
+    {
+        using var harness = new BridgeServiceHarness();
+        harness.Settings.EnableWindowTitleFallback = true;
+        harness.PlaybackDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Ursa Starsong",
+            Title = """Waving Through a Window (from "Dear Evan Hansen") (Chiptune Version)""",
+            Source = "TIDAL",
+            Provider = "tidal",
+            Method = "media_session",
+            Confidence = 0.98,
+            MatcherReason = "windows_media_session"
+        });
+        harness.WindowTitleDetector.Result = new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Ursa Starsong, Ian Martyn, ACappellaVGM, HealRNG, zdmajor7",
+            Title = """Waving Through a Window (from "Dear Evan Hansen")""",
+            Source = "TIDAL",
+            Provider = "tidal",
+            Method = "window_title",
+            Confidence = 0.72,
+            DetectedText = """Waving Through a Window (from "Dear Evan Hansen") - Ursa Starsong, Ian Martyn, ACappellaVGM, HealRNG, zdmajor7"""
+        };
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        var state = await harness.Service.RunDetectionAsync(CancellationToken.None);
+
+        Assert.Equal("""Waving Through a Window (from "Dear Evan Hansen") (Chiptune Version)""", state.NowPlaying.Title);
+        Assert.Equal("Ursa Starsong, Ian Martyn, ACappellaVGM, HealRNG, zdmajor7", state.NowPlaying.Artist);
+        Assert.Equal("media_session", state.NowPlaying.Method);
+        Assert.Equal("selected: media session with TIDAL window title artist credit", state.NowPlaying.SelectionReason);
+    }
+
+    [Fact]
+    public async Task RunDetectionAsync_RetainsWindowTitleArtistCredit_ForSameTidalMediaSession_WhenWindowTitleDrops()
+    {
+        using var harness = new BridgeServiceHarness();
+        harness.Settings.EnableWindowTitleFallback = true;
+        harness.PlaybackDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Ursa Starsong",
+            Title = """Waving Through a Window (from "Dear Evan Hansen") (Chiptune Version)""",
+            Source = "TIDAL",
+            Provider = "tidal",
+            Method = "media_session",
+            Confidence = 0.98,
+            MatcherReason = "windows_media_session"
+        });
+        harness.PlaybackDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Ursa Starsong",
+            Title = """Waving Through a Window (from "Dear Evan Hansen") (Chiptune Version)""",
+            Source = "TIDAL",
+            Provider = "tidal",
+            Method = "media_session",
+            Confidence = 0.98,
+            MatcherReason = "windows_media_session"
+        });
+        harness.WindowTitleDetector.Results.Enqueue(new DetectionResult
+        {
+            Status = "playing",
+            Artist = "Ursa Starsong, Ian Martyn, ACappellaVGM, HealRNG, zdmajor7",
+            Title = """Waving Through a Window (from "Dear Evan Hansen")""",
+            Source = "TIDAL",
+            Provider = "tidal",
+            Method = "window_title",
+            Confidence = 0.72
+        });
+        harness.WindowTitleDetector.Results.Enqueue(null);
+
+        await harness.Service.InitializeAsync(CancellationToken.None);
+        var enrichedState = await harness.Service.RunDetectionAsync(CancellationToken.None);
+        var retainedState = await harness.Service.RunDetectionAsync(CancellationToken.None);
+
+        Assert.Equal("Ursa Starsong, Ian Martyn, ACappellaVGM, HealRNG, zdmajor7", enrichedState.NowPlaying.Artist);
+        Assert.Equal("Ursa Starsong, Ian Martyn, ACappellaVGM, HealRNG, zdmajor7", retainedState.NowPlaying.Artist);
+        Assert.Equal("selected: media session retaining richer TIDAL artist credit", retainedState.NowPlaying.SelectionReason);
+    }
+
+    [Fact]
     public async Task RunDetectionAsync_IgnoresIdleGenericTidalWindowTitle_WhenNoPlaybackIsActive()
     {
         using var harness = new BridgeServiceHarness();
@@ -1704,7 +1827,18 @@ public sealed class BridgeServiceBehaviorTests
     private sealed class ConfigurableWindowTitleDetector : IWindowTitleDetector
     {
         public DetectionResult? Result { get; set; }
-        public DetectionResult? Detect() => Result is null ? null : BridgeStatePolicy.CloneDetection(Result);
+        public Queue<DetectionResult?> Results { get; } = [];
+
+        public DetectionResult? Detect()
+        {
+            if (Results.Count > 0)
+            {
+                var result = Results.Dequeue();
+                return result is null ? null : BridgeStatePolicy.CloneDetection(result);
+            }
+
+            return Result is null ? null : BridgeStatePolicy.CloneDetection(Result);
+        }
     }
 
     private sealed class ConfigurableManualDetector : IManualDetector

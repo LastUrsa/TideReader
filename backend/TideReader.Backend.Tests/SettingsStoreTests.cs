@@ -40,6 +40,9 @@ public sealed class SettingsStoreTests
             Assert.Equal(0, settings.OverlaySettings.SongTextStyle.MaxCharacters);
             Assert.Equal(0, settings.OverlaySettings.ArtistTextStyle.MaxCharacters);
             Assert.Equal(0, settings.OverlaySettings.AlbumTextStyle.MaxCharacters);
+            Assert.Equal("Default", settings.OverlaySettings.SongTextStyle.TextOverflowMode);
+            Assert.Equal("Default", settings.OverlaySettings.ArtistTextStyle.TextOverflowMode);
+            Assert.Equal("Default", settings.OverlaySettings.AlbumTextStyle.TextOverflowMode);
         }
         finally
         {
@@ -81,6 +84,7 @@ public sealed class SettingsStoreTests
                         ColorHex = "#112233",
                         FontSizePx = 30,
                         MaxCharacters = 18,
+                        TextOverflowMode = "Scroll",
                         Bold = false,
                         Italic = true,
                         Underline = true
@@ -90,7 +94,8 @@ public sealed class SettingsStoreTests
                         FontFamily = "Tahoma",
                         ColorHex = "#445566",
                         FontSizePx = 18,
-                        MaxCharacters = 12
+                        MaxCharacters = 12,
+                        TextOverflowMode = "AutoSize"
                     },
                     AlbumTextStyle = new TideReader.Backend.Models.OverlayTextStyle
                     {
@@ -98,6 +103,7 @@ public sealed class SettingsStoreTests
                         ColorHex = "#778899",
                         FontSizePx = 16,
                         MaxCharacters = 8,
+                        TextOverflowMode = "TwoLines",
                         Bold = true
                     },
                     ImageSizePx = 92,
@@ -178,13 +184,16 @@ public sealed class SettingsStoreTests
             Assert.Equal(input.OverlaySettings.SongTextStyle.ColorHex, loaded.OverlaySettings.SongTextStyle.ColorHex);
             Assert.Equal(input.OverlaySettings.SongTextStyle.FontSizePx, loaded.OverlaySettings.SongTextStyle.FontSizePx);
             Assert.Equal(input.OverlaySettings.SongTextStyle.MaxCharacters, loaded.OverlaySettings.SongTextStyle.MaxCharacters);
+            Assert.Equal(input.OverlaySettings.SongTextStyle.TextOverflowMode, loaded.OverlaySettings.SongTextStyle.TextOverflowMode);
             Assert.Equal(input.OverlaySettings.SongTextStyle.Bold, loaded.OverlaySettings.SongTextStyle.Bold);
             Assert.Equal(input.OverlaySettings.SongTextStyle.Italic, loaded.OverlaySettings.SongTextStyle.Italic);
             Assert.Equal(input.OverlaySettings.SongTextStyle.Underline, loaded.OverlaySettings.SongTextStyle.Underline);
             Assert.Equal(input.OverlaySettings.ArtistTextStyle.FontFamily, loaded.OverlaySettings.ArtistTextStyle.FontFamily);
             Assert.Equal(input.OverlaySettings.ArtistTextStyle.MaxCharacters, loaded.OverlaySettings.ArtistTextStyle.MaxCharacters);
+            Assert.Equal(input.OverlaySettings.ArtistTextStyle.TextOverflowMode, loaded.OverlaySettings.ArtistTextStyle.TextOverflowMode);
             Assert.Equal(input.OverlaySettings.AlbumTextStyle.ColorHex, loaded.OverlaySettings.AlbumTextStyle.ColorHex);
             Assert.Equal(input.OverlaySettings.AlbumTextStyle.MaxCharacters, loaded.OverlaySettings.AlbumTextStyle.MaxCharacters);
+            Assert.Equal(input.OverlaySettings.AlbumTextStyle.TextOverflowMode, loaded.OverlaySettings.AlbumTextStyle.TextOverflowMode);
             Assert.Equal(input.OverlaySettings.ImageSizePx, loaded.OverlaySettings.ImageSizePx);
             Assert.Equal(input.OverlaySettings.BackgroundColorHex, loaded.OverlaySettings.BackgroundColorHex);
             Assert.Equal(input.OverlaySettings.OverlayContainerStyle.BackgroundMode, loaded.OverlaySettings.OverlayContainerStyle.BackgroundMode);

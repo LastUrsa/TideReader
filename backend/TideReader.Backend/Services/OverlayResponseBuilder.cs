@@ -113,6 +113,9 @@ internal static class OverlayResponseBuilder
         position: relative;
         isolation: isolate;
       }
+      .frame.has-smart-text {
+        max-width: 100vw;
+      }
       .frame::before {
         content: "";
         position: absolute;
@@ -226,6 +229,70 @@ internal static class OverlayResponseBuilder
         margin-top: 4px;
         line-height: 1.2;
       }
+      .smart-text {
+        display: block;
+        max-width: 100%;
+        min-width: 0;
+        position: relative;
+      }
+      .smart-text-scroll,
+      .smart-text-twolines,
+      .smart-text-autosize {
+        line-height: 1.25;
+        margin-bottom: -0.16em;
+        overflow: hidden;
+        overflow-wrap: normal;
+        padding-bottom: 0.16em;
+      }
+      .smart-text-content {
+        display: block;
+      }
+      .smart-text-scroll .smart-text-content,
+      .smart-text-autosize .smart-text-content {
+        overflow: hidden;
+        text-overflow: clip;
+        white-space: nowrap;
+      }
+      .smart-text-twolines .smart-text-content {
+        display: -webkit-box;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+        line-clamp: 2;
+        overflow: hidden;
+        white-space: normal;
+      }
+      .smart-text-measure {
+        left: 0;
+        pointer-events: none;
+        position: absolute;
+        top: 0;
+        visibility: hidden;
+        white-space: nowrap;
+      }
+      .smart-text-scroll-track {
+        animation: smart-text-marquee 12s linear infinite;
+        display: none;
+        gap: 2em;
+        min-width: max-content;
+        white-space: nowrap;
+      }
+      .smart-text.is-scrolling .smart-text-content {
+        display: none;
+      }
+      .smart-text.is-scrolling .smart-text-scroll-track {
+        display: inline-flex;
+      }
+      .smart-text-scroll-track span {
+        display: inline-block;
+      }
+      @keyframes smart-text-marquee {
+        from {
+          transform: translateX(0);
+        }
+        to {
+          transform: translateX(calc(-50% - 1em));
+        }
+      }
     </style>
   </head>
   <body>
@@ -251,6 +318,7 @@ internal static class OverlayResponseBuilder
           colorHex: '#EBEBEB',
           fontSizePx: 24,
           maxCharacters: 0,
+          textOverflowMode: 'Default',
           bold: true,
           italic: false,
           underline: false
@@ -260,6 +328,7 @@ internal static class OverlayResponseBuilder
           colorHex: '#929498',
           fontSizePx: 15,
           maxCharacters: 0,
+          textOverflowMode: 'Default',
           bold: false,
           italic: false,
           underline: false
@@ -269,6 +338,7 @@ internal static class OverlayResponseBuilder
           colorHex: '#929498',
           fontSizePx: 15,
           maxCharacters: 0,
+          textOverflowMode: 'Default',
           bold: false,
           italic: false,
           underline: false
@@ -386,6 +456,113 @@ internal static class OverlayResponseBuilder
         element.style.fontWeight = style.bold ? '700' : '400';
         element.style.fontStyle = style.italic ? 'italic' : 'normal';
         element.style.textDecoration = style.underline ? 'underline' : 'none';
+      }
+
+      function normalizeTextOverflowMode(value) {
+        switch (String(value || 'Default')) {
+          case 'Scroll':
+          case 'TwoLines':
+          case 'AutoSize':
+            return String(value);
+          default:
+            return 'Default';
+        }
+      }
+
+      function smartTextSignature(text, style) {
+        return JSON.stringify({
+          text: text,
+          mode: normalizeTextOverflowMode(style.textOverflowMode),
+          fontFamily: style.fontFamily,
+          colorHex: style.colorHex,
+          fontSizePx: style.fontSizePx,
+          bold: style.bold === true,
+          italic: style.italic === true,
+          underline: style.underline === true
+        });
+      }
+
+      function setSmartText(element, text, style) {
+        const mode = normalizeTextOverflowMode(style.textOverflowMode);
+        const signature = smartTextSignature(text, style);
+        if (element.dataset.smartTextSignature === signature) {
+          updateSmartTextElement(element, style);
+          return;
+        }
+
+        element.dataset.smartTextSignature = signature;
+        element.classList.remove('smart-text-default', 'smart-text-scroll', 'smart-text-twolines', 'smart-text-autosize', 'is-scrolling');
+        element.classList.add('smart-text', 'smart-text-' + mode.toLowerCase());
+        element.dataset.overflowMode = mode;
+        element.textContent = '';
+
+        if (mode === 'Default') {
+          element.textContent = text;
+          return;
+        }
+
+        const measure = document.createElement('span');
+        measure.className = 'smart-text-measure';
+        measure.setAttribute('aria-hidden', 'true');
+        measure.textContent = text;
+
+        const content = document.createElement('span');
+        content.className = 'smart-text-content';
+        content.textContent = text;
+
+        element.appendChild(measure);
+        element.appendChild(content);
+
+        if (mode === 'Scroll') {
+          const track = document.createElement('span');
+          track.className = 'smart-text-scroll-track';
+          const first = document.createElement('span');
+          first.textContent = text;
+          const second = document.createElement('span');
+          second.setAttribute('aria-hidden', 'true');
+          second.textContent = text;
+          track.appendChild(first);
+          track.appendChild(second);
+          element.appendChild(track);
+        }
+
+        window.requestAnimationFrame(function() {
+          updateSmartTextElement(element, style);
+        });
+      }
+
+      function updateSmartTextElement(element, style) {
+        const mode = normalizeTextOverflowMode(style.textOverflowMode);
+        const measure = element.querySelector('.smart-text-measure');
+        if (!measure || mode === 'Default' || mode === 'TwoLines') {
+          element.classList.remove('is-scrolling');
+          element.style.fontSize = style.fontSizePx + 'px';
+          return;
+        }
+
+        element.style.fontSize = style.fontSizePx + 'px';
+        const availableWidth = element.clientWidth;
+        if (availableWidth <= 0) {
+          element.classList.remove('is-scrolling');
+          return;
+        }
+
+        const fullWidth = measure.scrollWidth;
+        const overflowing = fullWidth > availableWidth + 1;
+        element.classList.toggle('is-scrolling', mode === 'Scroll' && overflowing);
+
+        if (mode === 'AutoSize' && overflowing) {
+          const minimumSize = Math.max(1, Math.round(style.fontSizePx * 0.6));
+          const fittedSize = Math.max(minimumSize, Math.floor((availableWidth / fullWidth) * style.fontSizePx));
+          element.style.fontSize = fittedSize + 'px';
+        }
+      }
+
+      function applySmartTextConstraint(settings) {
+        const frame = document.querySelector('.frame');
+        const smartModeActive = [settings.songTextStyle, settings.artistTextStyle, settings.albumTextStyle]
+          .some(function(style) { return normalizeTextOverflowMode(style.textOverflowMode) !== 'Default'; });
+        frame.classList.toggle('has-smart-text', smartModeActive);
       }
 
       function truncateText(value, maxCharacters, fallback) {
@@ -519,6 +696,7 @@ internal static class OverlayResponseBuilder
         applyTextStyle(document.getElementById('title'), next.songTextStyle);
         applyTextStyle(document.getElementById('artist'), next.artistTextStyle);
         applyTextStyle(document.getElementById('album'), next.albumTextStyle);
+        applySmartTextConstraint(next);
         copy.style.textAlign = String(next.textAlign || 'Left').toLowerCase();
         coverShell.style.width = next.imageSizePx + 'px';
         coverShell.style.minWidth = next.imageSizePx + 'px';
@@ -542,9 +720,9 @@ internal static class OverlayResponseBuilder
         const placeholder = document.getElementById('cover-placeholder');
         statusEl.textContent = 'Offline';
         statusEl.className = 'status-pill not_running';
-        document.getElementById('title').textContent = 'Waiting for TideReader';
-        document.getElementById('artist').textContent = truncateText('Reconnects automatically', fallbackSettings.artistTextStyle.maxCharacters, 'Reconnects automatically');
-        document.getElementById('album').textContent = truncateText('OBS source will refresh itself', fallbackSettings.albumTextStyle.maxCharacters, 'OBS source will refresh itself');
+        setSmartText(document.getElementById('title'), truncateText('Waiting for TideReader', fallbackSettings.songTextStyle.maxCharacters, 'Waiting for TideReader'), fallbackSettings.songTextStyle);
+        setSmartText(document.getElementById('artist'), truncateText('Reconnects automatically', fallbackSettings.artistTextStyle.maxCharacters, 'Reconnects automatically'), fallbackSettings.artistTextStyle);
+        setSmartText(document.getElementById('album'), truncateText('OBS source will refresh itself', fallbackSettings.albumTextStyle.maxCharacters, 'OBS source will refresh itself'), fallbackSettings.albumTextStyle);
         cover.removeAttribute('src');
         cover.style.display = 'none';
         coverShell.classList.remove('has-artwork');
@@ -572,9 +750,9 @@ internal static class OverlayResponseBuilder
           const statusEl = document.getElementById('status');
           statusEl.textContent = formatStatus(status);
           statusEl.className = 'status-pill ' + status;
-          document.getElementById('title').textContent = truncateText(data.title, activeSettings.songTextStyle.maxCharacters, 'Waiting for playback');
-          document.getElementById('artist').textContent = truncateText(getArtistDisplayText(data, 'Artist unavailable'), activeSettings.artistTextStyle.maxCharacters, 'Artist unavailable');
-          document.getElementById('album').textContent = truncateText(getAlbumDisplayText(data, 'Album unavailable'), activeSettings.albumTextStyle.maxCharacters, 'Album unavailable');
+          setSmartText(document.getElementById('title'), truncateText(data.title, activeSettings.songTextStyle.maxCharacters, 'Waiting for playback'), activeSettings.songTextStyle);
+          setSmartText(document.getElementById('artist'), truncateText(getArtistDisplayText(data, 'Artist unavailable'), activeSettings.artistTextStyle.maxCharacters, 'Artist unavailable'), activeSettings.artistTextStyle);
+          setSmartText(document.getElementById('album'), truncateText(getAlbumDisplayText(data, 'Album unavailable'), activeSettings.albumTextStyle.maxCharacters, 'Album unavailable'), activeSettings.albumTextStyle);
 
           const cover = document.getElementById('cover');
           const coverShell = document.getElementById('cover-shell');

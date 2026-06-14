@@ -351,7 +351,7 @@ public sealed class BridgeService
 
         if (playback.Result is not null)
         {
-            return playback.Result;
+            return TryApplyWindowTitleArtistCredit(playback.Result, windowTitleResult, previous) ?? playback.Result;
         }
 
         var browserStopTransitionFallback = TryUseRecentGenericWindowTitleTidalAfterBrowserStop(playback.Result, windowTitleResult, previous, settings);
@@ -664,6 +664,118 @@ public sealed class BridgeService
         held.SelectionReason = "selected: holding recent TIDAL window title track";
         return held;
     }
+
+    private static DetectionResult? TryApplyWindowTitleArtistCredit(DetectionResult playbackResult, DetectionResult? windowTitleResult, DetectionResult previous)
+    {
+        if (!string.Equals(playbackResult.Provider, "tidal", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(playbackResult.Method, "media_session", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(playbackResult.Status, "playing", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        if (windowTitleResult is not null &&
+            (!string.Equals(windowTitleResult.Method, "window_title", StringComparison.OrdinalIgnoreCase) ||
+            !string.Equals(windowTitleResult.Status, "playing", StringComparison.OrdinalIgnoreCase) ||
+            !IsActionableWindowTitleTidal(windowTitleResult) ||
+            !AreCompatibleTidalTitles(playbackResult.Title, windowTitleResult.Title)))
+        {
+            windowTitleResult = null;
+        }
+
+        if (windowTitleResult is not null &&
+            IsRicherArtistCredit(windowTitleResult.Artist, playbackResult.Artist))
+        {
+            return WithArtistCredit(
+                playbackResult,
+                windowTitleResult.Artist,
+                "media session with TIDAL window title artist credit",
+                "window_title_artist_credit");
+        }
+
+        if (IsSameTidalMediaSessionTitle(playbackResult, previous) &&
+            IsRicherArtistCredit(previous.Artist, playbackResult.Artist))
+        {
+            return WithArtistCredit(
+                playbackResult,
+                previous.Artist,
+                "media session retaining richer TIDAL artist credit",
+                "retained_artist_credit");
+        }
+
+        return null;
+    }
+
+    private static DetectionResult WithArtistCredit(DetectionResult playbackResult, string artistCredit, string selectionReason, string matcherReason)
+    {
+        var enriched = BridgeStatePolicy.CloneDetection(playbackResult);
+        enriched.Artist = artistCredit.Trim();
+        enriched.RawArtist = string.IsNullOrWhiteSpace(enriched.RawArtist) ? playbackResult.Artist : enriched.RawArtist;
+        enriched.DetectedText = $"{enriched.Artist} - {enriched.Title}".Trim(' ', '-');
+        enriched.MatcherReason = string.IsNullOrWhiteSpace(enriched.MatcherReason)
+            ? matcherReason
+            : $"{enriched.MatcherReason}+{matcherReason}";
+        enriched.SelectionReason = $"selected: {selectionReason}";
+        return enriched;
+    }
+
+    private static bool IsRicherArtistCredit(string? candidateArtist, string? currentArtist)
+    {
+        var candidate = candidateArtist?.Trim() ?? "";
+        var current = currentArtist?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(candidate) ||
+            string.Equals(candidate, current, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(current))
+        {
+            return true;
+        }
+
+        return candidate.Contains(current, StringComparison.OrdinalIgnoreCase) &&
+            SplitArtistCredit(candidate).Count > SplitArtistCredit(current).Count;
+    }
+
+    private static List<string> SplitArtistCredit(string artistCredit) =>
+        artistCredit
+            .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries)
+            .ToList();
+
+    private static bool IsSameTidalMediaSessionTitle(DetectionResult playbackResult, DetectionResult previous) =>
+        string.Equals(previous.Provider, "tidal", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(previous.Method, "media_session", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(previous.Status, "playing", StringComparison.OrdinalIgnoreCase) &&
+        string.Equals(previous.Title?.Trim(), playbackResult.Title?.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private static bool AreCompatibleTidalTitles(string? playbackTitle, string? windowTitle)
+    {
+        var playback = NormalizeTitleForArtistCreditMatch(playbackTitle);
+        var window = NormalizeTitleForArtistCreditMatch(windowTitle);
+        if (string.IsNullOrWhiteSpace(playback) || string.IsNullOrWhiteSpace(window))
+        {
+            return false;
+        }
+
+        if (string.Equals(playback, window, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var longer = playback.Length > window.Length ? playback : window;
+        var shorter = playback.Length > window.Length ? window : playback;
+        if (!longer.StartsWith(shorter, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var suffix = longer[shorter.Length..].TrimStart();
+        return suffix.StartsWith('(') || suffix.StartsWith('[') || suffix.StartsWith('-');
+    }
+
+    private static string NormalizeTitleForArtistCreditMatch(string? title) =>
+        Regex.Replace(title?.Trim() ?? "", @"\s+", " ");
 
     private bool ShouldPreferWindowTitleOverBrowser(DetectionResult windowTitleResult, DetectionResult previous, Settings settings)
     {
@@ -1252,6 +1364,7 @@ public sealed class BridgeService
         ColorHex = style.ColorHex,
         FontSizePx = style.FontSizePx,
         MaxCharacters = style.MaxCharacters,
+        TextOverflowMode = style.TextOverflowMode,
         Bold = style.Bold,
         Italic = style.Italic,
         Underline = style.Underline
@@ -1436,6 +1549,10 @@ public sealed class BridgeService
             style.MaxCharacters = defaults.MaxCharacters;
         }
 
+        style.TextOverflowMode = NormalizeOverlayChoice(
+            style.TextOverflowMode,
+            defaults.TextOverflowMode,
+            ["Default", "Scroll", "TwoLines", "AutoSize"]);
         style.ColorHex = NormalizeHexColor(style.ColorHex, defaults.ColorHex);
     }
 

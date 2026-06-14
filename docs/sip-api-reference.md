@@ -68,7 +68,7 @@ Response:
   "appId": "tidereader",
   "appName": "TideReader",
   "name": "TideReader",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "mode": "standalone",
   "protocolVersion": 1,
   "capabilities": [

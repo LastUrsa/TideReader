@@ -72,7 +72,7 @@ For desktop UI work, run `npm run dev` in `frontend/`, set `TIDAL_DESKTOP_DEV_SE
 Create a local publish folder:
 
 ```bash
-powershell -ExecutionPolicy Bypass -File .\scripts\publish-desktop.ps1 -Version 0.5.0
+powershell -ExecutionPolicy Bypass -File .\scripts\publish-desktop.ps1 -Version 0.6.0
 ```
 
 The publish output includes `TideReader.exe`, `TideReader.Backend.exe`, and bundled frontend assets under `frontend-dist/`.
@@ -80,7 +80,7 @@ The publish output includes `TideReader.exe`, `TideReader.Backend.exe`, and bund
 Create release artifacts:
 
 ```bash
-powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 0.5.0
+powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 0.6.0
 ```
 
 Signed releases require an Authenticode code-signing certificate. For GitHub Releases, configure `WINDOWS_CODESIGN_PFX_BASE64` with a base64-encoded PFX and `WINDOWS_CODESIGN_PFX_PASSWORD` with its password. Local release packaging can sign with either `-SigningCertificatePfxPath` or `-SigningCertificateThumbprint`.

@@ -22,7 +22,7 @@ public sealed class SipIntegrationTests
         Assert.Equal("tidereader", appPayload.GetProperty("appId").GetString());
         Assert.Equal("TideReader", appPayload.GetProperty("appName").GetString());
         Assert.Equal("TideReader", appPayload.GetProperty("name").GetString());
-        Assert.Equal("0.5.0", appPayload.GetProperty("version").GetString());
+        Assert.Equal("0.6.0", appPayload.GetProperty("version").GetString());
         Assert.Equal("service", appPayload.GetProperty("mode").GetString());
         Assert.Equal(1, appPayload.GetProperty("protocolVersion").GetInt32());
         Assert.Contains("profiles", appPayload.GetProperty("capabilities").EnumerateArray().Select(capability => capability.GetString()));
@@ -561,7 +561,7 @@ public sealed class SipIntegrationTests
 
     private sealed class SipFakeAppUpdateChecker : IAppUpdateChecker
     {
-        public string CurrentVersion => "0.5.0";
+        public string CurrentVersion => "0.6.0";
         public string ReleaseUrl => "https://github.com/LastUrsa/TideReader/releases";
         public Task<UpdateInfo> CheckForUpdatesAsync(CancellationToken cancellationToken) => Task.FromResult(new UpdateInfo());
     }

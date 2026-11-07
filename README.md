@@ -108,3 +108,10 @@ Older persisted settings are still normalized on startup where possible. For exa
 - Browser support is metadata-driven and depends on what Windows media sessions expose.
 - For TIDAL desktop playback, Windows media sessions provide the authoritative title and playback state. When the TIDAL window title exposes a richer artist credit for the same track, TideReader uses that artist list for outputs and overlays.
 - The app only reads local now-playing session data and writes local outputs. It does not use browser extensions, scraping, account auth, or playback controls.
+
+
+## SIP Troubleshooting and Operation Metadata
+
+Adds capability-advertised SIP operations/diagnostics, request correlation, fixed safe error codes/messages, and bounded in-memory operation lookup (256 operations/14 days, reset on process restart). Profile/browser-support changes return confirmed revision/timestamp metadata; revisions are scoped to the app session. Diagnostics separate actual overlay listener health from producer-observed playback/browser freshness, including per-browser disabled/idle/stale observations without track titles, site names or browser content. Existing status payloads and synchronous clients remain supported.
+
+See [SIP Observability v1](./SIP_OBSERVABILITY_V1.md) for the common headers, operation/error schema, retry rules, capabilities, and endpoint examples. Legacy `error` fields remain display-only; clients should log the fixed `message`/`errorCode` and operational IDs instead.

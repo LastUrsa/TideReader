@@ -1,5 +1,9 @@
 using System.Text;
 using System.Text.Json;
+using System.Net.Http.Json;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using TideReader.Backend.Models;
@@ -392,6 +396,179 @@ public sealed class SipIntegrationTests
 
         Assert.Equal(StatusCodes.Status400BadRequest, response.StatusCode);
         Assert.Equal("InvalidRequest", response.Body.GetProperty("error").GetString());
+    }
+
+
+    [Fact]
+    public async Task ObservabilityHttp_CorrelatesAppliedChangesAndOperationLookup()
+    {
+        using var fixture = await StartSipServiceAsync();
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseTestServer();
+        builder.Services.AddSingleton(fixture.Service);
+        await using var app = builder.Build();
+        SipHttpApi.Configure(app);
+        await app.StartAsync();
+        using var client = app.GetTestClient();
+        client.DefaultRequestHeaders.Add("X-Request-ID", "livepanel-action");
+        var response = await client.PostAsJsonAsync("/api/v1/profile", new { Profile = "Listening Party" });
+        response.EnsureSuccessStatusCode();
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("livepanel-action", payload.GetProperty("requestId").GetString());
+        Assert.Equal("livepanel-action", response.Headers.GetValues("X-Request-ID").Single());
+        var id = payload.GetProperty("operationId").GetString();
+        Assert.Equal("success", payload.GetProperty("operation").GetProperty("outcome").GetString());
+        var operation = await client.GetFromJsonAsync<JsonElement>("/api/v1/operations/" + id);
+        Assert.Equal(id, operation.GetProperty("operation").GetProperty("id").GetString());
+        var current = await client.GetFromJsonAsync<JsonElement>("/api/v1/profile/current");
+        Assert.Equal(id, current.GetProperty("confirmedOperationId").GetString());
+        Assert.True(current.GetProperty("revision").GetInt64() > 0);
+        var diagnostics = await client.GetFromJsonAsync<JsonElement>("/api/v1/diagnostics");
+        var text = diagnostics.GetRawText();
+        Assert.DoesNotContain("Signal Bloom", text);
+        Assert.DoesNotContain("Starsong", text);
+        Assert.False(diagnostics.TryGetProperty("outputFolder", out _));
+        Assert.True(diagnostics.GetProperty("dependencies").TryGetProperty("overlay", out _));
+    }
+
+    [Fact]
+    public async Task ObservabilityHttp_RejectsInvalidCorrelationAndSanitizesFailures()
+    {
+        using var fixture = await StartSipServiceAsync();
+        var builder = WebApplication.CreateBuilder();
+        builder.WebHost.UseTestServer(); builder.Services.AddSingleton(fixture.Service);
+        await using var app = builder.Build(); SipHttpApi.Configure(app); await app.StartAsync();
+        using var client = app.GetTestClient();
+        client.DefaultRequestHeaders.Add("X-Request-ID", new string('x', 65));
+        var invalid = await client.GetAsync("/api/v1/status"); Assert.Equal(400, (int)invalid.StatusCode);
+        client.DefaultRequestHeaders.Remove("X-Request-ID");
+        client.DefaultRequestHeaders.Add("Origin", "https://example.invalid");
+        var forbidden = await client.GetAsync("/api/v1/diagnostics"); Assert.Equal(403, (int)forbidden.StatusCode);
+        client.DefaultRequestHeaders.Remove("Origin");
+        var failed = await client.PostAsJsonAsync("/api/v1/profile", new { Profile = "private-token" });
+        var payload = await failed.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(404, (int)failed.StatusCode);
+        Assert.Equal("NOT_FOUND", payload.GetProperty("errorCode").GetString());
+        Assert.DoesNotContain("private-token", payload.GetProperty("operation").GetRawText());
+        var missing = await client.GetAsync("/api/v1/operations/missing"); Assert.Equal(404, (int)missing.StatusCode);
+    }
+
+    [Fact]
+    public async Task DependencyObservations_AreProducerBasedAndSeparateFromContent()
+    {
+        using var fixture = await StartSipServiceAsync();
+        var before = ToJson(fixture.Service.Diagnostics()).GetProperty("dependencies");
+        var observed = before.GetProperty("source").GetProperty("observedAt").GetString();
+        var again = ToJson(fixture.Service.Diagnostics()).GetProperty("dependencies");
+        Assert.Equal(observed, again.GetProperty("source").GetProperty("observedAt").GetString());
+        await fixture.Service.SetBrowserSupportAsync(false, CancellationToken.None);
+        var disabled = ToJson(fixture.Service.Diagnostics()).GetProperty("dependencies");
+        Assert.Equal("disabled", disabled.GetProperty("browser").GetProperty("state").GetString());
+        Assert.All(disabled.GetProperty("browsers").EnumerateArray(), item => Assert.Equal("disabled", item.GetProperty("state").GetString()));
+        Assert.DoesNotContain("Signal Bloom", disabled.GetRawText());
+        Assert.True(fixture.Service.BrowserSupport().Revision > 1);
+    }
+
+
+    [Theory]
+    [InlineData(400, "INVALID_REQUEST")]
+    [InlineData(403, "FORBIDDEN")]
+    [InlineData(404, "NOT_FOUND")]
+    [InlineData(404, "OPERATION_NOT_FOUND")]
+    [InlineData(409, "BUSY")]
+    [InlineData(500, "INTERNAL_ERROR")]
+    [InlineData(503, "UNAVAILABLE")]
+    [InlineData(409, "CANCELED")]
+    [InlineData(405, "")]
+    [InlineData(413, "")]
+    [InlineData(415, "")]
+    [InlineData(429, "")]
+    [InlineData(503, "")]
+    [InlineData(500, "private-token")]
+    public async Task Observability_UsesStableCodesWithoutPersistingRawErrors(int status, string code)
+    {
+        using var fixture = await StartSipServiceAsync();
+        var http = NewObservedContext("POST", "/api/v1/browser-support");
+        await fixture.Service.Observability.InvokeAsync(http, async context =>
+        {
+            context.Response.StatusCode = status;
+            await context.Response.WriteAsJsonAsync(new { Success = false, Error = "password=secret", ErrorCode = code });
+        }, fixture.Service);
+        http.Response.Body.Position = 0;
+        using var json = await JsonDocument.ParseAsync(http.Response.Body);
+        var operation = json.RootElement.GetProperty("operation");
+        Assert.DoesNotContain("secret", operation.GetRawText());
+        Assert.DoesNotContain("private-token", operation.GetRawText());
+        Assert.False(string.IsNullOrWhiteSpace(operation.GetProperty("errorCode").GetString()));
+        Assert.Equal(status, http.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Observability_RetainsBoundedHistoryAndExpiresOldOperations()
+    {
+        using var fixture = await StartSipServiceAsync();
+        var clock = new ObservabilityClock();
+        var observer = new SipObservability("test", clock);
+        string first = "", last = "";
+        for (var i = 0; i < 257; i++)
+        {
+            var http = NewObservedContext("POST", "/api/v1/profile");
+            await observer.InvokeAsync(http, context => context.Response.WriteAsJsonAsync(new { Success = true }), fixture.Service);
+            http.Response.Body.Position = 0;
+            using var json = await JsonDocument.ParseAsync(http.Response.Body);
+            last = json.RootElement.GetProperty("operationId").GetString()!;
+            if (i == 0) first = last;
+            clock.Now += TimeSpan.FromSeconds(1);
+        }
+        Assert.Null(observer.Get(first)); Assert.NotNull(observer.Get(last));
+        clock.Now += TimeSpan.FromDays(15); Assert.Null(observer.Get(last));
+        var next = NewObservedContext("POST", "/api/v1/browser-support");
+        await observer.InvokeAsync(next, context => context.Response.WriteAsJsonAsync(new { Success = true }), fixture.Service);
+        Assert.Equal(200, next.Response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Observability_CapturesCancellationExceptionsAndEmpty404s()
+    {
+        using var fixture = await StartSipServiceAsync();
+        foreach (var cancel in new[] { true, false })
+        {
+            var http = NewObservedContext("POST", "/api/v1/profile");
+            await fixture.Service.Observability.InvokeAsync(http, _ => throw (cancel ? new OperationCanceledException() : new IOException("password=secret")), fixture.Service);
+            http.Response.Body.Position = 0; using var json = await JsonDocument.ParseAsync(http.Response.Body);
+            Assert.Equal(cancel ? "CANCELED" : "INTERNAL_ERROR", json.RootElement.GetProperty("errorCode").GetString());
+            Assert.DoesNotContain("secret", json.RootElement.GetProperty("operation").GetRawText());
+        }
+        var missing = NewObservedContext("GET", "/api/v1/missing");
+        await fixture.Service.Observability.InvokeAsync(missing, context => { context.Response.StatusCode = 404; return Task.CompletedTask; }, fixture.Service);
+        Assert.Equal(404, missing.Response.StatusCode);
+    }
+
+    private static DefaultHttpContext NewObservedContext(string method, string route)
+    {
+        var http = new DefaultHttpContext();
+        http.Request.Method = method; http.Request.Path = route;
+        http.RequestServices = new ServiceCollection().AddLogging().BuildServiceProvider();
+        http.Response.Body = new MemoryStream();
+        return http;
+    }
+    private sealed class ObservabilityClock : TimeProvider
+    {
+        public DateTimeOffset Now = DateTimeOffset.UtcNow;
+        public override DateTimeOffset GetUtcNow() => Now;
+    }
+
+
+    [Fact]
+    public async Task OperationLoggingFailureDoesNotPreventTheAction()
+    {
+        using var fixture = await StartSipServiceAsync();
+        fixture.Dispose();
+        var http = NewObservedContext("POST", "/api/v1/profile");
+        await fixture.Service.Observability.InvokeAsync(http, context => context.Response.WriteAsJsonAsync(new { Success = true }), fixture.Service);
+        http.Response.Body.Position = 0;
+        using var json = await JsonDocument.ParseAsync(http.Response.Body);
+        Assert.Equal("success", json.RootElement.GetProperty("operation").GetProperty("outcome").GetString());
     }
 
     private static async Task<TestSipContext> StartSipServiceAsync(

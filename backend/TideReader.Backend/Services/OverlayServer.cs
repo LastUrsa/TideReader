@@ -1,7 +1,7 @@
 using System.Net;
 namespace TideReader.Backend.Services;
 
-public sealed class OverlayServer : IOverlayCoordinator, IDisposable
+public sealed class OverlayServer : IOverlayCoordinator, IOverlayDiagnostics, IDisposable
 {
     private readonly IPlaybackSnapshotStore _snapshotStore;
     private readonly IOverlaySettingsSnapshotStore _overlaySettingsSnapshotStore;
@@ -13,6 +13,12 @@ public sealed class OverlayServer : IOverlayCoordinator, IDisposable
     private Task? _loopTask;
     private int _port;
     private bool _enabled;
+    private DateTimeOffset? _observedAt, _lastSuccessAt;
+    private string _errorCode = "";
+    public OverlayDependencyObservation ObserveOverlay()
+    {
+        lock (_lock) { return new(_errorCode.Length > 0 ? "unavailable" : _enabled && _listener?.IsListening == true ? "ready" : _observedAt is null ? "unknown" : "disabled", _observedAt, _lastSuccessAt, _errorCode); }
+    }
 
     public OverlayServer(IPlaybackSnapshotStore snapshotStore, IOverlaySettingsSnapshotStore overlaySettingsSnapshotStore, AppLogger logger)
     {
@@ -82,13 +88,15 @@ public sealed class OverlayServer : IOverlayCoordinator, IDisposable
 
         if (!enabled)
         {
+            lock (_lock) { _observedAt = DateTimeOffset.UtcNow; _errorCode = ""; }
             _logger.Info("overlay disabled");
             return;
         }
 
         var listener = new HttpListener();
         listener.Prefixes.Add($"http://127.0.0.1:{port}/");
-        listener.Start();
+        try { listener.Start(); }
+        catch { lock (_lock) { _observedAt = DateTimeOffset.UtcNow; _errorCode = "UNAVAILABLE"; } throw; }
 
         var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var loop = Task.Run(() => HandleLoopAsync(listener, cts.Token), CancellationToken.None);
@@ -100,6 +108,7 @@ public sealed class OverlayServer : IOverlayCoordinator, IDisposable
             _loopTask = loop;
             _enabled = true;
             _port = port;
+            _observedAt = DateTimeOffset.UtcNow; _lastSuccessAt = _observedAt; _errorCode = "";
         }
 
         _logger.Info($"overlay enabled on port {port}");
@@ -120,6 +129,7 @@ public sealed class OverlayServer : IOverlayCoordinator, IDisposable
             }
             catch (HttpListenerException)
             {
+                lock (_lock) { if (ReferenceEquals(_listener, listener) && !cancellationToken.IsCancellationRequested) { _observedAt = DateTimeOffset.UtcNow; _errorCode = "UNAVAILABLE"; } }
                 break;
             }
             catch (ObjectDisposedException)

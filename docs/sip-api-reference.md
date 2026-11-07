@@ -301,3 +301,10 @@ To test an already running TideReader instance:
 ```bash
 ./scripts/test-sip-newman.sh --no-launch --base-url http://127.0.0.1:47030
 ```
+
+
+## Additive Observability Extension
+
+Adds capability-advertised SIP operations/diagnostics, request correlation, fixed safe error codes/messages, and bounded in-memory operation lookup (256 operations/14 days, reset on process restart). Profile/browser-support changes return confirmed revision/timestamp metadata; revisions are scoped to the app session. Diagnostics separate actual overlay listener health from producer-observed playback/browser freshness, including per-browser disabled/idle/stale observations without track titles, site names or browser content. Existing status payloads and synchronous clients remain supported.
+
+The [shared protocol contract](../SIP_OBSERVABILITY_V1.md) defines `X-Request-ID`, safe error fields, `GET /api/v1/diagnostics`, and `GET /api/v1/operations/{id}`. Capability detection is required before using optional behavior.

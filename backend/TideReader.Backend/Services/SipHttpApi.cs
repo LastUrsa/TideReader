@@ -22,13 +22,14 @@ public static class SipHttpApi
             context.Response.Headers["Referrer-Policy"] = "no-referrer";
             context.Response.Headers["X-Frame-Options"] = "DENY";
 
-            if (!IsLocalHost(context.Request.Host.Host))
+            if (!IsLocalHost(context.Request.Host.Host) || context.Request.Headers.ContainsKey("Origin") || string.Equals(context.Request.Headers["Sec-Fetch-Site"], "cross-site", StringComparison.OrdinalIgnoreCase))
             {
                 await WriteErrorAsync(context, StatusCodes.Status403Forbidden, "Forbidden");
                 return;
             }
 
-            await next(context);
+            var sip = context.RequestServices.GetRequiredService<SipService>();
+            await sip.Observability.InvokeAsync(context, next, sip);
         });
 
         app.MapGet("/api/v1/app", (SipService sip) => Results.Json(sip.App(), JsonOptions));
@@ -40,6 +41,10 @@ public static class SipHttpApi
         app.MapGet("/api/v1/profiles", (SipService sip) => Results.Json(sip.Profiles(), JsonOptions));
         app.MapGet("/api/v1/profile/current", (SipService sip) => Results.Json(sip.CurrentProfile(), JsonOptions));
         app.MapPost("/api/v1/profile", ActivateProfileAsync);
+        app.MapGet("/api/v1/diagnostics", (SipService sip) => Results.Json(sip.Diagnostics(), JsonOptions));
+        app.MapGet("/api/v1/operations/{id}", (string id, SipService sip) => sip.Observability.Get(id) is { } operation
+            ? Results.Json(new { Operation = operation, OperationId = operation.Id }, JsonOptions)
+            : Results.Json(new { Success = false, ErrorCode = "OPERATION_NOT_FOUND", Error = "OPERATION_NOT_FOUND" }, JsonOptions, statusCode: 404));
     }
 
     internal static async Task<IResult> SetBrowserSupportAsync(HttpContext context, SipService sip, CancellationToken cancellationToken)
@@ -156,6 +161,8 @@ public static class SipHttpApi
     internal static async Task WriteErrorAsync(HttpContext context, int statusCode, string error)
     {
         context.Response.StatusCode = statusCode;
-        await context.Response.WriteAsJsonAsync(new SipErrorResponse { Success = false, Error = error }, JsonOptions);
+        var requestId = SipObservability.CorrelationOrNew(context.Request.Headers["X-Request-ID"].ToString());
+        context.Response.Headers["X-Request-ID"] = requestId;
+        await context.Response.WriteAsJsonAsync(new { Success = false, Error = error, ErrorCode = statusCode == 403 ? "FORBIDDEN" : "INVALID_REQUEST", Message = statusCode == 403 ? "Local access is required." : "The request is invalid.", Retryable = false, RequestId = requestId, SessionId = context.RequestServices.GetService<SipService>()?.Observability.SessionId ?? "", ObservedAt = DateTimeOffset.UtcNow }, JsonOptions);
     }
 }

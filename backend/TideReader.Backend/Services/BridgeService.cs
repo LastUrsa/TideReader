@@ -23,6 +23,50 @@ public sealed class BridgeService
     private readonly Dictionary<string, DateTime> _detectionTimesUtc = new(StringComparer.OrdinalIgnoreCase);
     private static readonly Regex HexColorPattern = new("^#(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})$", RegexOptions.Compiled);
 
+    private DateTimeOffset? _sourceObservedAt, _sourceLastSuccessAt, _overlayObservedAt, _overlayLastSuccessAt, _settingsConfirmedAt;
+    private string _sourceErrorCode = "", _overlayErrorCode = "";
+    private long _settingsRevision;
+    private readonly Dictionary<string, DateTimeOffset> _browserSuccess = new(StringComparer.OrdinalIgnoreCase);
+    public long SettingsRevision { get { lock (_lock) { return _settingsRevision; } } }
+    public DateTimeOffset? SettingsConfirmedAt { get { lock (_lock) { return _settingsConfirmedAt; } } }
+    public void LogSipOperation(string requestId, string operationId, string outcome, string code)
+    {
+        try { _logger.Info($"sip_operation request_id={requestId} operation_id={operationId} outcome={outcome} code={code}"); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+        catch (ObjectDisposedException) { }
+    }
+    public object GetDependencyObservations()
+    {
+        lock (_lock)
+        {
+            var stale = _sourceObservedAt is { } observed && DateTimeOffset.UtcNow - observed > TimeSpan.FromSeconds(Math.Max(5, _settings.BrowserSettings.StaleSessionAfterSeconds));
+            var browserEnabled = _settings.BrowserSettings.Enabled;
+            var active = _state.Status is "playing" or "paused";
+            return new
+            {
+                Overlay = _overlayServer is IOverlayDiagnostics actual ? actual.ObserveOverlay() : new OverlayDependencyObservation(!_settings.OverlayEnabled ? "disabled" : _overlayErrorCode.Length > 0 ? "unavailable" : _overlayObservedAt is null ? "unknown" : "ready", _overlayObservedAt, _overlayLastSuccessAt, _overlayErrorCode),
+                Browsers = BrowserObservationsLocked(),
+                Source = new { State = _sourceObservedAt is null ? "unknown" : stale ? "stale" : _sourceErrorCode.Length > 0 ? "unavailable" : active ? "ready" : "idle", ObservedAt = _sourceObservedAt, LastUpdateAt = _sourceObservedAt, LastSuccessAt = _sourceLastSuccessAt, ErrorCode = _sourceErrorCode },
+                Browser = new { State = !browserEnabled ? "disabled" : _sourceObservedAt is null ? "unknown" : stale ? "stale" : active && _state.Provider == "browser" ? "ready" : "idle", ObservedAt = _sourceObservedAt, LastSuccessAt = active && _state.Provider == "browser" ? _sourceLastSuccessAt : null, ErrorCode = !browserEnabled ? "INTEGRATION_DISABLED" : "" }
+            };
+        }
+    }
+
+    private object[] BrowserObservationsLocked()
+    {
+        var settings = _settings.BrowserSettings.SupportedBrowsers;
+        return new[] { ("chrome", settings.ChromeEnabled), ("edge", settings.EdgeEnabled), ("firefox", settings.FirefoxEnabled), ("brave", settings.BraveEnabled), ("opera", settings.OperaEnabled) }.Select(browser =>
+        {
+            var enabled = _settings.BrowserSettings.Enabled && browser.Item2;
+            var sessions = _browserDebug.Sessions.Where(session => string.Equals(session.Browser, browser.Item1, StringComparison.OrdinalIgnoreCase)).ToList();
+            var latest = sessions.Where(session => session.LastUpdatedUtc != default).Select(session => (DateTimeOffset?)session.LastUpdatedUtc).Max();
+            var stale = latest is { } updated && DateTimeOffset.UtcNow - updated > TimeSpan.FromSeconds(_settings.BrowserSettings.StaleSessionAfterSeconds);
+            var active = sessions.Any(session => session.PlaybackState is "playing" or "paused");
+            return (object)new { Browser = browser.Item1, State = !enabled ? "disabled" : _sourceObservedAt is null ? "unknown" : _sourceErrorCode.Length > 0 ? "unavailable" : stale ? "stale" : active ? "ready" : "idle", Reason = !enabled ? "disabled" : stale ? "stale" : active ? "session_available" : "no_session", ObservedAt = _sourceObservedAt, LastUpdateAt = latest, LastSuccessAt = _browserSuccess.TryGetValue(browser.Item1, out var last) ? (DateTimeOffset?)last : null };
+        }).ToArray();
+    }
+
     private Settings _settings = new();
     private DetectionResult _state = new();
     private DetectionResult _confirmed = new();
@@ -61,6 +105,7 @@ public sealed class BridgeService
         _overlaySettingsSnapshotStore.Update(_settings.OverlaySettings);
         _metadataProviderMode = ParseMetadataProviderMode(_settings.MetadataProviderMode);
         await ConfigureOverlayAsync(cancellationToken);
+        lock (_lock) { _settingsRevision++; _settingsConfirmedAt = DateTimeOffset.UtcNow; }
         SettingsChanged?.Invoke(CloneSettings(_settings));
         _logger.Info("startup build=audio-endpoint-debug-v1");
     }
@@ -170,6 +215,7 @@ public sealed class BridgeService
         lock (_lock)
         {
             _settings = settings;
+            _settingsRevision++; _settingsConfirmedAt = DateTimeOffset.UtcNow;
             _overlaySettingsSnapshotStore.Update(settings.OverlaySettings);
             _metadataProviderMode = ParseMetadataProviderMode(settings.MetadataProviderMode);
             _lastError = "";
@@ -259,6 +305,12 @@ public sealed class BridgeService
             _logger.Info($"poll error: {ex.Message}");
         }
 
+        lock (_lock)
+        {
+            _sourceObservedAt = DateTimeOffset.UtcNow;
+            _sourceErrorCode = string.IsNullOrWhiteSpace(_lastError) ? "" : "UNAVAILABLE";
+            if (_sourceErrorCode.Length == 0) _sourceLastSuccessAt = _sourceObservedAt;
+        }
         return GetState();
     }
 
@@ -315,6 +367,10 @@ public sealed class BridgeService
         lock (_lock)
         {
             _browserDebug = CloneBrowserDebugState(playback.BrowserDebug);
+            foreach (var session in _browserDebug.Sessions.Where(session => session.PlaybackState is "playing" or "paused"))
+            {
+                if (session.Browser.ToLowerInvariant() is "chrome" or "edge" or "firefox" or "brave" or "opera") _browserSuccess[session.Browser] = DateTimeOffset.UtcNow;
+            }
         }
 
         var windowTitleResult = settings.EnableWindowTitleFallback ? _windowTitleDetector.Detect() : null;
@@ -1239,8 +1295,17 @@ public sealed class BridgeService
 
     private async Task ConfigureOverlayAsync(Settings settings, CancellationToken cancellationToken)
     {
-        await _overlayServer.ConfigureAsync(settings.OverlayEnabled, settings.OverlayPort, cancellationToken);
-        OverlayStaticFileWriter.Write(settings.OutputFolder, settings.OverlayPort);
+        try
+        {
+            await _overlayServer.ConfigureAsync(settings.OverlayEnabled, settings.OverlayPort, cancellationToken);
+            OverlayStaticFileWriter.Write(settings.OutputFolder, settings.OverlayPort);
+            lock (_lock) { _overlayObservedAt = DateTimeOffset.UtcNow; _overlayLastSuccessAt = _overlayObservedAt; _overlayErrorCode = ""; }
+        }
+        catch
+        {
+            lock (_lock) { _overlayObservedAt = DateTimeOffset.UtcNow; _overlayErrorCode = "UNAVAILABLE"; }
+            throw;
+        }
     }
 
     private static MetadataProviderMode ParseMetadataProviderMode(string value) =>

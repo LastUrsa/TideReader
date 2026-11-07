@@ -4,6 +4,9 @@ namespace TideReader.Backend.Services;
 
 public sealed class SipService(BridgeService bridgeService, IAppUpdateChecker appUpdateChecker, SipHostOptions options)
 {
+    public SipObservability Observability { get; } = new(appUpdateChecker.CurrentVersion);
+    public object Diagnostics() => Observability.Diagnostics(bridgeService.GetDependencyObservations());
+    public void LogOperation(SipOperation operation) => bridgeService.LogSipOperation(operation.RequestId, operation.Id, operation.Outcome, operation.ErrorCode);
     public SipAppResponse App() => new()
     {
         Version = appUpdateChecker.CurrentVersion,
@@ -44,6 +47,8 @@ public sealed class SipService(BridgeService bridgeService, IAppUpdateChecker ap
         var containerStyle = overlaySettings.OverlayContainerStyle ?? new OverlayContainerStyle();
         return new SipStatusResponse
         {
+            Revision = bridgeService.SettingsRevision,
+            Dependencies = bridgeService.GetDependencyObservations(),
             State = health.Status == "ready" ? StatusState(state.NowPlaying) : "warning",
             Message = string.IsNullOrWhiteSpace(state.StatusMessage) ? health.Message : state.StatusMessage,
             Healthy = health.Status is "ready" or "degraded",
@@ -79,6 +84,8 @@ public sealed class SipService(BridgeService bridgeService, IAppUpdateChecker ap
         var activeProfile = bridgeService.GetActiveOverlayProfile();
         return new SipCurrentProfileResponse
         {
+            Revision = bridgeService.SettingsRevision,
+            ConfirmedAt = bridgeService.SettingsConfirmedAt,
             Id = activeProfile.Id,
             Name = activeProfile.Name
         };
@@ -99,6 +106,8 @@ public sealed class SipService(BridgeService bridgeService, IAppUpdateChecker ap
 
         return new SipProfileActivationResponse
         {
+            Revision = bridgeService.SettingsRevision,
+            ConfirmedAt = bridgeService.SettingsConfirmedAt,
             Success = true,
             Profile = activeProfile.Name,
             ProfileId = activeProfile.Id
@@ -110,6 +119,8 @@ public sealed class SipService(BridgeService bridgeService, IAppUpdateChecker ap
         var state = bridgeService.GetState();
         return new SipBrowserSupportResponse
         {
+            Revision = bridgeService.SettingsRevision,
+            ConfirmedAt = bridgeService.SettingsConfirmedAt,
             Enabled = state.Settings.BrowserSettings.Enabled
         };
     }
@@ -124,6 +135,8 @@ public sealed class SipService(BridgeService bridgeService, IAppUpdateChecker ap
         await bridgeService.SetBrowserSupportEnabledAsync(enabled.Value, cancellationToken);
         return new SipBrowserSupportUpdateResponse
         {
+            Revision = bridgeService.SettingsRevision,
+            ConfirmedAt = bridgeService.SettingsConfirmedAt,
             Success = true
         };
     }

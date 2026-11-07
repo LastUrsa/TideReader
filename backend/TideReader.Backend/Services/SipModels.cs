@@ -35,7 +35,7 @@ public sealed class SipAppResponse
     public List<string> Capabilities { get; set; } =
     [
         SipProtocol.ProfilesCapability,
-        SipProtocol.BrowserSupportCapability
+        SipProtocol.BrowserSupportCapability, "operations", "diagnostics"
     ];
 }
 
@@ -53,7 +53,7 @@ public sealed class SipCapabilitiesResponse
     public List<string> Capabilities { get; set; } =
     [
         SipProtocol.ProfilesCapability,
-        SipProtocol.BrowserSupportCapability
+        SipProtocol.BrowserSupportCapability, "operations", "diagnostics"
     ];
     public bool SupportsProfiles { get; set; }
     public bool SupportsStatusReporting { get; set; }
@@ -62,6 +62,8 @@ public sealed class SipCapabilitiesResponse
 [ExcludeFromCodeCoverage]
 public sealed class SipStatusResponse
 {
+    public long Revision { get; set; }
+    public object? Dependencies { get; set; }
     public string State { get; set; } = "idle";
     public string Message { get; set; } = "";
     public bool Healthy { get; set; }
@@ -110,6 +112,8 @@ public sealed class SipProfilesResponse
 [ExcludeFromCodeCoverage]
 public sealed class SipCurrentProfileResponse
 {
+    public long Revision { get; set; }
+    public DateTimeOffset? ConfirmedAt { get; set; }
     public string Id { get; set; } = "";
     public string Name { get; set; } = "";
 }
@@ -123,6 +127,8 @@ public sealed class SipActivateProfileRequest
 [ExcludeFromCodeCoverage]
 public sealed class SipProfileActivationResponse
 {
+    public long Revision { get; set; }
+    public DateTimeOffset? ConfirmedAt { get; set; }
     public bool Success { get; set; }
     public string Profile { get; set; } = "";
     public string ProfileId { get; set; } = "";
@@ -131,6 +137,8 @@ public sealed class SipProfileActivationResponse
 [ExcludeFromCodeCoverage]
 public sealed class SipBrowserSupportResponse
 {
+    public long Revision { get; set; }
+    public DateTimeOffset? ConfirmedAt { get; set; }
     public bool Enabled { get; set; }
 }
 
@@ -143,6 +151,8 @@ public sealed class SipBrowserSupportRequest
 [ExcludeFromCodeCoverage]
 public sealed class SipBrowserSupportUpdateResponse
 {
+    public long Revision { get; set; }
+    public DateTimeOffset? ConfirmedAt { get; set; }
     public bool Success { get; set; }
 }
 

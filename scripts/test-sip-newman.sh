@@ -72,6 +72,17 @@ done
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
+# PowerShell runs Newman from TEMP. Resolve relative collection paths before
+# changing working directories or converting them to Windows paths.
+collection_path="$collection"
+if [[ "$collection_path" != /* ]]; then
+    collection_path="$repo_root/$collection_path"
+fi
+if [[ ! -f "$collection_path" ]]; then
+    echo "SIP smoke collection was not found: $collection_path" >&2
+    exit 1
+fi
+
 if [[ "$launch" == true && "$skip_build" == false ]]; then
     echo "Building frontend..."
     (cd frontend && npm run build)
@@ -133,7 +144,7 @@ fi
 
 echo "Running SIP Newman smoke checks against ${base_url}"
 if [[ "$run_newman_on_windows" == true ]]; then
-    collection_windows="$(to_windows_path "$collection")"
+    collection_windows="$(to_windows_path "$collection_path")"
     powershell.exe -NoProfile -Command "\$ErrorActionPreference = 'Stop'; Set-Location \$env:TEMP; & npx.cmd --yes '${newman_package}' run '${collection_windows}' --env-var 'baseUrl=${base_url}'"
 elif command -v newman >/dev/null 2>&1; then
     newman_cmd=(newman)
@@ -145,5 +156,5 @@ else
 fi
 
 if [[ "$run_newman_on_windows" != true ]]; then
-    "${newman_cmd[@]}" run "$collection" --env-var "baseUrl=${base_url}"
+    "${newman_cmd[@]}" run "$collection_path" --env-var "baseUrl=${base_url}"
 fi

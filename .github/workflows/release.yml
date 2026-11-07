@@ -9,6 +9,11 @@ on:
       - "v*"
   workflow_dispatch:
     inputs:
+      publish_release:
+        description: Publish GitHub release (leave false for packaging validation)
+        required: false
+        default: false
+        type: boolean
       version:
         description: Release version without the leading v
         required: true
@@ -169,6 +174,7 @@ jobs:
           if-no-files-found: error
 
       - name: Build release notes
+        if: github.event_name == 'push' || inputs.publish_release
         id: release_notes
         env:
           GH_TOKEN: ${{ github.token }}
@@ -206,6 +212,7 @@ jobs:
           "notes_file=$notesFile" >> $env:GITHUB_OUTPUT
 
       - name: Create GitHub release
+        if: github.event_name == 'push' || inputs.publish_release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh

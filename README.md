@@ -9,6 +9,12 @@ Windows desktop app for publishing now-playing data and an OBS-friendly overlay 
 - Includes overlay styling, Smart Text overflow handling, color picking, live preview, saved profiles, source selection, browser-session diagnostics, and update checks.
 - Exposes a localhost-only SIP v1 API for same-machine integrations such as LivePanel.
 
+## Requirements
+
+- Windows x64 with Microsoft WebView2 Runtime.
+- .NET 10 Desktop Runtime for the default framework-dependent package. A self-contained package can be produced with `-SelfContained`.
+- OBS Browser Source support when using the overlay.
+
 ## Stack
 
 - .NET 10, ASP.NET Core, WPF, WebView2
@@ -72,15 +78,15 @@ For desktop UI work, run `npm run dev` in `frontend/`, set `TIDAL_DESKTOP_DEV_SE
 Create a local publish folder:
 
 ```bash
-powershell -ExecutionPolicy Bypass -File .\scripts\publish-desktop.ps1 -Version 0.6.0
+powershell -ExecutionPolicy Bypass -File .\scripts\publish-desktop.ps1 -Version 1.0.0
 ```
 
-The publish output includes `TideReader.exe`, `TideReader.Backend.exe`, and bundled frontend assets under `frontend-dist/`.
+The publish output includes `TideReader.exe`, its backend/runtime assemblies, and bundled frontend assets under `frontend-dist/`. The desktop app hosts its backend in process; there is no separate backend process to launch.
 
 Create release artifacts:
 
 ```bash
-powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 0.6.0
+powershell -ExecutionPolicy Bypass -File .\scripts\package-release.ps1 -Version 1.0.0
 ```
 
 Signed releases require an Authenticode code-signing certificate. For GitHub Releases, configure `WINDOWS_CODESIGN_PFX_BASE64` with a base64-encoded PFX and `WINDOWS_CODESIGN_PFX_PASSWORD` with its password. Local release packaging can sign with either `-SigningCertificatePfxPath` or `-SigningCertificateThumbprint`.
@@ -115,3 +121,5 @@ Older persisted settings are still normalized on startup where possible. For exa
 Adds capability-advertised SIP operations/diagnostics, request correlation, fixed safe error codes/messages, and bounded in-memory operation lookup (256 operations/14 days, reset on process restart). Profile/browser-support changes return confirmed revision/timestamp metadata; revisions are scoped to the app session. Diagnostics separate actual overlay listener health from producer-observed playback/browser freshness, including per-browser disabled/idle/stale observations without track titles, site names or browser content. Existing status payloads and synchronous clients remain supported.
 
 See [SIP Observability v1](./SIP_OBSERVABILITY_V1.md) for the common headers, operation/error schema, retry rules, capabilities, and endpoint examples. Legacy `error` fields remain display-only; clients should log the fixed `message`/`errorCode` and operational IDs instead.
+
+See [1.0 release validation](RELEASE_VALIDATION.md) for the verified checks, packaging gates, and manual-validation boundaries.
